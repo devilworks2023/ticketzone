@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  ticketzone-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: ticketzone-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ticketzone-network
+
+  # Uncomment to add SSL with Certbot
+  # certbot:
+  #   image: certbot/certbot
+  #   container_name: ticketzone-certbot
+  #   volumes:
+  #     - ./certbot/conf:/etc/letsencrypt
+  #     - ./certbot/www:/var/www/certbot
+  #   entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+  #   networks:
+  #     - ticketzone-network
+
+networks:
+  ticketzone-network:
+    driver: bridge
+
+volumes:
+  certbot-conf:
+  certbot-www:

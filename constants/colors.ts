@@ -1,0 +1,27 @@
+export default {
+  dark: {
+    background: "#0A0A0F",
+    surface: "#14141F",
+    surfaceLight: "#1E1E2D",
+    card: "#1A1A28",
+    text: "#FFFFFF",
+    textSecondary: "#8E8E9A",
+    textMuted: "#5A5A6E",
+    primary: "#FF2D6A",
+    primaryLight: "#FF5A8A",
+    secondary: "#00D4FF",
+    secondaryLight: "#4DE4FF",
+    accent: "#A855F7",
+    success: "#22C55E",
+    warning: "#F59E0B",
+    error: "#EF4444",
+    border: "#2A2A3D",
+    borderLight: "#3A3A4D",
+    gradient: {
+      primary: ["#FF2D6A", "#A855F7"],
+      secondary: ["#00D4FF", "#A855F7"],
+      dark: ["#0A0A0F", "#14141F"],
+    },
+  },
+  tint: "#FF2D6A",
+};

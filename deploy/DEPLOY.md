@@ -135,3 +135,49 @@ docker-compose -f deploy/docker-compose.yml up -d --build
 
 Los datos se almacenan en el navegador del usuario (localStorage).
 Para un sistema completo de backups, considera añadir una base de datos.
+
+---
+
+## Instalación en Hestia Control Panel
+
+Si usas Hestia CP, hay un script específico que automatiza todo:
+
+```bash
+# 1. Sube el proyecto al servidor
+scp -r ./* usuario@tu-servidor:/tmp/ticketzone/
+
+# 2. Conecta al servidor
+ssh root@tu-servidor
+
+# 3. Ejecuta el instalador de Hestia
+cd /tmp/ticketzone
+chmod +x deploy/install-hestia.sh
+./deploy/install-hestia.sh
+```
+
+### ¿Qué hace el script de Hestia?
+
+1. ✅ Verifica que Hestia esté instalado
+2. ✅ Lista usuarios disponibles
+3. ✅ Crea el dominio en Hestia automáticamente
+4. ✅ Configura Nginx como proxy reverso
+5. ✅ Instala Docker si no existe
+6. ✅ Configura SSL con Let's Encrypt (opcional)
+7. ✅ Crea servicio systemd para inicio automático
+8. ✅ Genera script de gestión fácil de usar
+
+### Comandos de gestión (Hestia)
+
+```bash
+# Ver estado
+/home/USUARIO/web/DOMINIO/manage-ticketzone.sh status
+
+# Ver logs
+/home/USUARIO/web/DOMINIO/manage-ticketzone.sh logs
+
+# Reiniciar
+/home/USUARIO/web/DOMINIO/manage-ticketzone.sh restart
+
+# Actualizar
+/home/USUARIO/web/DOMINIO/manage-ticketzone.sh update
+```

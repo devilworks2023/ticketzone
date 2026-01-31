@@ -181,67 +181,68 @@ setup_app_directory() {
     APP_DIR="/home/$HESTIA_USER/web/$DOMAIN"
     DOCKER_DIR="$APP_DIR/docker"
     
-    # Limpiar directorio anterior si existe
-    if [ -d "$DOCKER_DIR" ]; then
-        rm -rf "$DOCKER_DIR"/*
-    fi
-    mkdir -p "$DOCKER_DIR"
+    # Guardar directorio actual antes de cualquier cambio
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    ORIGINAL_DIR="$(pwd)"
     
-    # Obtener directorio del proyecto (donde se ejecuta el script)
-    PROJECT_DIR="$(pwd)"
-    DEPLOY_DIR="$PROJECT_DIR/deploy"
-    
-    # Si estamos dentro de deploy, subir un nivel
-    if [ -f "$PROJECT_DIR/Dockerfile" ] && [ ! -f "$PROJECT_DIR/package.json" ]; then
-        PROJECT_DIR="$(dirname "$PROJECT_DIR")"
-        DEPLOY_DIR="$PROJECT_DIR/deploy"
-    fi
-    
-    log_info "Directorio del proyecto: $PROJECT_DIR"
-    log_info "Copiando a: $DOCKER_DIR"
-    
-    # Verificar que existe package.json en el proyecto
-    if [ ! -f "$PROJECT_DIR/package.json" ]; then
-        log_error "No se encuentra package.json en $PROJECT_DIR"
-        log_info "Asegurate de ejecutar el script desde el directorio raiz del proyecto"
+    # Detectar directorio del proyecto
+    if [ -f "$ORIGINAL_DIR/package.json" ]; then
+        PROJECT_DIR="$ORIGINAL_DIR"
+    elif [ -f "$ORIGINAL_DIR/../package.json" ]; then
+        PROJECT_DIR="$(cd "$ORIGINAL_DIR/.." && pwd)"
+    else
+        log_error "No se encuentra package.json"
         exit 1
     fi
     
-    # Copiar archivos del proyecto (excepto node_modules, .git y deploy)
-    cd "$PROJECT_DIR"
-    for item in *; do
-        if [ "$item" != "node_modules" ] && [ "$item" != ".git" ] && [ "$item" != "deploy" ]; then
-            cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-        fi
-    done
-    
-    # Copiar archivos ocultos excepto .git
-    for item in .[!.]*; do
-        if [ "$item" != ".git" ] && [ -e "$item" ]; then
-            cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-        fi
-    done
-    
-    # Copiar Dockerfile desde deploy
-    if [ -f "$DEPLOY_DIR/Dockerfile" ]; then
-        cp -f "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
-        log_info "Dockerfile copiado desde $DEPLOY_DIR"
+    # Detectar directorio deploy
+    if [ -f "$PROJECT_DIR/deploy/Dockerfile" ]; then
+        DEPLOY_DIR="$PROJECT_DIR/deploy"
+    elif [ -f "$SCRIPT_DIR/Dockerfile" ]; then
+        DEPLOY_DIR="$SCRIPT_DIR"
     else
-        log_error "No se encuentra Dockerfile en $DEPLOY_DIR"
+        log_error "No se encuentra Dockerfile en deploy/"
+        exit 1
+    fi
+    
+    log_info "Proyecto: $PROJECT_DIR"
+    log_info "Deploy: $DEPLOY_DIR"
+    log_info "Destino: $DOCKER_DIR"
+    
+    # Limpiar y crear directorio
+    rm -rf "$DOCKER_DIR" 2>/dev/null || true
+    mkdir -p "$DOCKER_DIR"
+    
+    # Copiar TODO el proyecto primero
+    cp -r "$PROJECT_DIR"/* "$DOCKER_DIR/" 2>/dev/null || true
+    cp -r "$PROJECT_DIR"/.[!.]* "$DOCKER_DIR/" 2>/dev/null || true
+    
+    # Eliminar carpetas innecesarias
+    rm -rf "$DOCKER_DIR/node_modules" 2>/dev/null || true
+    rm -rf "$DOCKER_DIR/.git" 2>/dev/null || true
+    rm -rf "$DOCKER_DIR/deploy" 2>/dev/null || true
+    
+    # Copiar Dockerfile al directorio docker (CRITICO)
+    cp -f "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
+    
+    # Verificar que Dockerfile existe
+    if [ ! -f "$DOCKER_DIR/Dockerfile" ]; then
+        log_error "FALLO: Dockerfile no se copio correctamente"
+        log_info "Contenido de $DEPLOY_DIR:"
+        ls -la "$DEPLOY_DIR/"
         exit 1
     fi
     
     # Verificar archivos criticos
-    if [ -f "$DOCKER_DIR/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
-        log_success "Archivos copiados a $DOCKER_DIR"
-        log_info "Contenido: $(ls "$DOCKER_DIR/" | head -10 | tr '\n' ' ')..."
-    else
-        log_error "Faltan archivos criticos. Contenido de $DOCKER_DIR:"
+    log_info "Verificando archivos en $DOCKER_DIR:"
+    ls -la "$DOCKER_DIR/Dockerfile" "$DOCKER_DIR/package.json" 2>&1 || {
+        log_error "Faltan archivos criticos"
         ls -la "$DOCKER_DIR/"
         exit 1
-    fi
+    }
     
-    chown -R $HESTIA_USER:$HESTIA_USER $APP_DIR
+    log_success "Archivos copiados correctamente"
+    chown -R $HESTIA_USER:$HESTIA_USER "$APP_DIR"
 }
 
 # Create Hestia domain

@@ -1,37 +1,42 @@
 #!/bin/bash
 
-# Quick deploy script - Run from project root
-# Usage: ./deploy/quick-deploy.sh
+# TicketZone - Despliegue Rápido
+# Ejecutar desde el directorio del proyecto
 
 set -e
 
-echo "🎫 TicketZone - Quick Deploy"
-echo "============================"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Check if docker is available
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker no encontrado. Ejecuta install.sh primero."
+echo -e "${BLUE}[INFO]${NC} Iniciando despliegue de TicketZone..."
+
+# Verificar que estamos en el directorio correcto
+if [ ! -f "deploy/Dockerfile" ]; then
+    echo -e "${RED}[ERROR]${NC} Ejecuta este script desde la raíz del proyecto"
     exit 1
 fi
 
-# Build and deploy
-echo "📦 Construyendo imagen..."
-docker build -t ticketzone-web -f deploy/Dockerfile .
+# Verificar que package.deploy.json existe
+if [ ! -f "deploy/package.deploy.json" ]; then
+    echo -e "${RED}[ERROR]${NC} Falta deploy/package.deploy.json"
+    exit 1
+fi
 
-echo "🚀 Desplegando..."
+# Detener contenedor existente
+echo -e "${BLUE}[INFO]${NC} Limpiando contenedores anteriores..."
 docker stop ticketzone-web 2>/dev/null || true
 docker rm ticketzone-web 2>/dev/null || true
 
-docker run -d \
-    --name ticketzone-web \
-    --restart unless-stopped \
-    -p 80:80 \
-    ticketzone-web
+# Construir y desplegar
+echo -e "${BLUE}[INFO]${NC} Construyendo imagen..."
+docker compose -f deploy/docker-compose.yml build --no-cache
 
+echo -e "${BLUE}[INFO]${NC} Iniciando servicio..."
+docker compose -f deploy/docker-compose.yml up -d
+
+echo -e "${GREEN}[✓]${NC} Despliegue completado"
 echo ""
-echo "✅ Desplegado en http://$(curl -s ifconfig.me 2>/dev/null || echo 'localhost')"
-echo ""
-echo "Comandos:"
-echo "  Ver logs:    docker logs -f ticketzone-web"
-echo "  Reiniciar:   docker restart ticketzone-web"
-echo "  Detener:     docker stop ticketzone-web"
+echo "URL: http://localhost:8080"
+echo "Logs: docker logs -f ticketzone-web"

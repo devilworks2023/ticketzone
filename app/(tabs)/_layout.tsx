@@ -1,10 +1,24 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Calendar, Users, ScanLine } from "lucide-react-native";
+import { LayoutDashboard, Calendar, Users, ScanLine, LogOut } from "lucide-react-native";
 import React from "react";
-import { Platform } from "react-native";
+import { Platform, TouchableOpacity, Alert } from "react-native";
+import { useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 
 export default function TabLayout() {
+  const { logout } = useAuth();
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro que deseas salir?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Salir', style: 'destructive', onPress: logout },
+      ]
+    );
+  };
+
   return (
     <Tabs
       screenOptions={{
@@ -28,6 +42,14 @@ export default function TabLayout() {
         headerTitleStyle: {
           fontWeight: '700',
         },
+        headerRight: () => (
+          <TouchableOpacity 
+            onPress={handleLogout}
+            style={{ marginRight: 16, padding: 8 }}
+          >
+            <LogOut color={Colors.dark.textMuted} size={20} />
+          </TouchableOpacity>
+        ),
       }}
     >
       <Tabs.Screen

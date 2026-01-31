@@ -1,18 +1,41 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, router, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { AppProvider } from "@/contexts/AppContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'auth';
+    const inBuyerGroup = segments[0] === 'buyer';
+    const inPurchaseGroup = segments[0] === 'purchase';
+
+    if (!isAuthenticated && !inAuthGroup && !inBuyerGroup && !inPurchaseGroup) {
+      router.replace('/auth/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, segments]);
+
+  return <>{children}</>;
+}
+
 function RootLayoutNav() {
   return (
+    <AuthGuard>
     <Stack 
       screenOptions={{ 
         headerBackTitle: "Atrás",
@@ -64,7 +87,20 @@ function RootLayoutNav() {
           headerShown: false,
         }} 
       />
+      <Stack.Screen 
+        name="auth/login" 
+        options={{ 
+          headerShown: false,
+        }} 
+      />
+      <Stack.Screen 
+        name="buyer/index" 
+        options={{ 
+          headerShown: false,
+        }} 
+      />
     </Stack>
+    </AuthGuard>
   );
 }
 
@@ -77,8 +113,10 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <AppProvider>
-          <StatusBar style="light" />
-          <RootLayoutNav />
+          <AuthProvider>
+            <StatusBar style="light" />
+            <RootLayoutNav />
+          </AuthProvider>
         </AppProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>

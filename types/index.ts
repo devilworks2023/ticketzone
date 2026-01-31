@@ -74,3 +74,22 @@ export interface PaymentMethod {
   icon: string;
   enabled: boolean;
 }
+
+export type UserRole = 'buyer' | 'seller' | 'admin';
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+  sellerId?: string;
+}
+
+export interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}

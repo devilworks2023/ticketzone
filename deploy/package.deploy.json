@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "npx expo export -p web",
+    "build:web": "npx expo export -p web",
     "start": "npx serve dist"
   },
   "dependencies": {

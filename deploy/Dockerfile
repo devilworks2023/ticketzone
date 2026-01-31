@@ -21,8 +21,8 @@ RUN npx expo export -p web
 # Production stage with Nginx
 FROM nginx:alpine AS production
 
-# Copy nginx configuration
-COPY deploy/nginx.conf /etc/nginx/nginx.conf
+# Copy nginx configuration from builder stage
+COPY --from=builder /app/deploy/nginx.conf /etc/nginx/nginx.conf
 
 # Copy built files
 COPY --from=builder /app/dist /usr/share/nginx/html

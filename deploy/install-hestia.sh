@@ -188,7 +188,14 @@ setup_app_directory() {
     PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
     
     if [ -f "$SCRIPT_DIR/Dockerfile" ]; then
-        cp -r "$PROJECT_DIR"/* $DOCKER_DIR/
+        # Copiar todos los archivos del proyecto
+        cp -r "$PROJECT_DIR"/* $DOCKER_DIR/ 2>/dev/null || true
+        cp -r "$PROJECT_DIR"/.[!.]* $DOCKER_DIR/ 2>/dev/null || true
+        
+        # Asegurar que deploy existe
+        mkdir -p $DOCKER_DIR/deploy
+        cp -f "$SCRIPT_DIR"/* $DOCKER_DIR/deploy/ 2>/dev/null || true
+        
         log_success "Archivos copiados a $DOCKER_DIR"
     else
         log_warning "Copia manualmente los archivos del proyecto a: $DOCKER_DIR"
@@ -344,13 +351,11 @@ create_docker_compose() {
     fi
     
     cat > "$DOCKER_DIR/docker-compose.hestia.yml" << COMPOSEEOF
-version: '3.8'
-
 services:
   ticketzone:
     build:
       context: .
-      dockerfile: deploy/Dockerfile
+      dockerfile: ./deploy/Dockerfile
     container_name: ticketzone-$HESTIA_USER
     restart: unless-stopped
     ports:

@@ -187,42 +187,58 @@ setup_app_directory() {
     fi
     mkdir -p "$DOCKER_DIR"
     
-    # Obtener directorios
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+    # Obtener directorio del proyecto (donde se ejecuta el script)
+    PROJECT_DIR="$(pwd)"
+    DEPLOY_DIR="$PROJECT_DIR/deploy"
     
-    log_info "Copiando desde: $PROJECT_DIR"
+    # Si estamos dentro de deploy, subir un nivel
+    if [ -f "$PROJECT_DIR/Dockerfile" ] && [ ! -f "$PROJECT_DIR/package.json" ]; then
+        PROJECT_DIR="$(dirname "$PROJECT_DIR")"
+        DEPLOY_DIR="$PROJECT_DIR/deploy"
+    fi
+    
+    log_info "Directorio del proyecto: $PROJECT_DIR"
     log_info "Copiando a: $DOCKER_DIR"
     
-    if [ -f "$SCRIPT_DIR/Dockerfile" ]; then
-        # Copiar archivos del proyecto (excepto node_modules y .git)
-        cd "$PROJECT_DIR"
-        for item in *; do
-            if [ "$item" != "node_modules" ] && [ "$item" != ".git" ] && [ "$item" != "deploy" ]; then
-                cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-            fi
-        done
-        
-        # Copiar archivos ocultos excepto .git
-        for item in .[!.]*; do
-            if [ "$item" != ".git" ] && [ -e "$item" ]; then
-                cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-            fi
-        done
-        
-        # Copiar Dockerfile al directorio raiz
-        cp -f "$SCRIPT_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
-        
-        # Verificar archivos criticos
-        if [ -f "$DOCKER_DIR/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
-            log_success "Archivos copiados a $DOCKER_DIR"
-        else
-            log_error "Faltan archivos criticos. Contenido de $DOCKER_DIR:"
-            ls -la "$DOCKER_DIR/"
-            exit 1
+    # Verificar que existe package.json en el proyecto
+    if [ ! -f "$PROJECT_DIR/package.json" ]; then
+        log_error "No se encuentra package.json en $PROJECT_DIR"
+        log_info "Asegurate de ejecutar el script desde el directorio raiz del proyecto"
+        exit 1
+    fi
+    
+    # Copiar archivos del proyecto (excepto node_modules, .git y deploy)
+    cd "$PROJECT_DIR"
+    for item in *; do
+        if [ "$item" != "node_modules" ] && [ "$item" != ".git" ] && [ "$item" != "deploy" ]; then
+            cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
         fi
+    done
+    
+    # Copiar archivos ocultos excepto .git
+    for item in .[!.]*; do
+        if [ "$item" != ".git" ] && [ -e "$item" ]; then
+            cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
+        fi
+    done
+    
+    # Copiar Dockerfile desde deploy
+    if [ -f "$DEPLOY_DIR/Dockerfile" ]; then
+        cp -f "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
+        log_info "Dockerfile copiado desde $DEPLOY_DIR"
     else
-        log_warning "Copia manualmente los archivos del proyecto a: $DOCKER_DIR"
+        log_error "No se encuentra Dockerfile en $DEPLOY_DIR"
+        exit 1
+    fi
+    
+    # Verificar archivos criticos
+    if [ -f "$DOCKER_DIR/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
+        log_success "Archivos copiados a $DOCKER_DIR"
+        log_info "Contenido: $(ls "$DOCKER_DIR/" | head -10 | tr '\n' ' ')..."
+    else
+        log_error "Faltan archivos criticos. Contenido de $DOCKER_DIR:"
+        ls -la "$DOCKER_DIR/"
+        exit 1
     fi
     
     chown -R $HESTIA_USER:$HESTIA_USER $APP_DIR

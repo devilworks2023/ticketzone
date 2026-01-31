@@ -25,6 +25,7 @@ COPY babel.config.js ./
 
 RUN echo 'const { getDefaultConfig } = require("expo/metro-config");' > metro.config.js && \
     echo 'const config = getDefaultConfig(__dirname);' >> metro.config.js && \
+    echo 'config.resolver.unstable_enablePackageExports = true;' >> metro.config.js && \
     echo 'module.exports = config;' >> metro.config.js
 
 RUN npx expo export -p web

@@ -327,6 +327,9 @@ create_docker_compose() {
     
     DOCKER_DIR="/home/$HESTIA_USER/web/$DOMAIN/docker"
     
+    # Crear directorio si no existe
+    mkdir -p "$DOCKER_DIR"
+    
     cat > "$DOCKER_DIR/docker-compose.hestia.yml" << COMPOSEEOF
 version: '3.8'
 

@@ -479,8 +479,30 @@ start_docker_app() {
     fi
     
     if [ ! -f "package.json" ]; then
-        log_error "package.json NO encontrado"
-        exit 1
+        log_error "package.json NO encontrado en $DOCKER_DIR"
+        log_info "Intentando copiar desde proyecto original..."
+        
+        # Buscar package.json en ubicaciones conocidas
+        if [ -f "/tmp/ticketzone/package.json" ]; then
+            log_info "Copiando TODO el proyecto desde /tmp/ticketzone/..."
+            cp -r /tmp/ticketzone/* ./ 2>/dev/null || true
+            cp -r /tmp/ticketzone/.[!.]* ./ 2>/dev/null || true
+            rm -rf ./node_modules ./.git ./deploy 2>/dev/null || true
+            # Asegurar que Dockerfile esta presente
+            cp -f /tmp/ticketzone/deploy/Dockerfile ./Dockerfile 2>/dev/null || true
+            log_success "Proyecto copiado desde /tmp/ticketzone/"
+        else
+            log_error "No se encuentra el proyecto en /tmp/ticketzone/"
+            log_info "Asegurate de clonar el proyecto primero:"
+            log_info "  cd /tmp && git clone https://github.com/devilworks2023/ticketzone.git"
+            exit 1
+        fi
+        
+        # Verificar de nuevo
+        if [ ! -f "package.json" ]; then
+            log_error "package.json sigue sin encontrarse despues de la copia"
+            exit 1
+        fi
     fi
     
     log_success "Todos los archivos verificados"

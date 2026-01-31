@@ -1,4 +1,4 @@
-# TicketZone Web - Multi-stage build (Sin dependencias de Rork)
+# TicketZone Web - Multi-stage build
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -9,7 +9,7 @@ RUN apk add --no-cache python3 make g++
 # Copy package.json for deployment
 COPY deploy/package.deploy.json ./package.json
 
-# Install dependencies with legacy peer deps for compatibility
+# Install dependencies
 RUN npm install --legacy-peer-deps
 
 # Copy source code

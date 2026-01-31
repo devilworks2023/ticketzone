@@ -15,7 +15,8 @@ RUN npm install --legacy-peer-deps
 # Copy source code
 COPY . .
 
-# Build web version
+# Build web version (enable package exports for zod/v4 resolution)
+ENV EXPO_USE_METRO_UNSTABLE_ENABLE_PACKAGE_EXPORTS=true
 RUN npx expo export -p web
 
 # Production stage with Nginx

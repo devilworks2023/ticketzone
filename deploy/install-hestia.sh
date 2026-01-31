@@ -181,22 +181,55 @@ setup_app_directory() {
     APP_DIR="/home/$HESTIA_USER/web/$DOMAIN"
     DOCKER_DIR="$APP_DIR/docker"
     
-    mkdir -p $DOCKER_DIR
+    # Limpiar directorio anterior si existe
+    if [ -d "$DOCKER_DIR" ]; then
+        rm -rf "$DOCKER_DIR"/*
+    fi
+    mkdir -p "$DOCKER_DIR"
     
-    # Copy deploy files
+    # Obtener directorios
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
     
+    log_info "Copiando desde: $PROJECT_DIR"
+    log_info "Copiando a: $DOCKER_DIR"
+    
     if [ -f "$SCRIPT_DIR/Dockerfile" ]; then
-        # Copiar todos los archivos del proyecto
-        cp -r "$PROJECT_DIR"/* $DOCKER_DIR/ 2>/dev/null || true
-        cp -r "$PROJECT_DIR"/.[!.]* $DOCKER_DIR/ 2>/dev/null || true
+        # Usar rsync si está disponible (más confiable)
+        if command -v rsync &>/dev/null; then
+            rsync -av --exclude='.git' --exclude='node_modules' "$PROJECT_DIR/" "$DOCKER_DIR/"
+        else
+            # Copiar todo el proyecto
+            cd "$PROJECT_DIR"
+            for item in *; do
+                if [ "$item" != "node_modules" ] && [ "$item" != ".git" ]; then
+                    cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
+                fi
+            done
+            # Copiar archivos ocultos excepto .git
+            for item in .[!.]*; do
+                if [ "$item" != ".git" ] && [ -e "$item" ]; then
+                    cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
+                fi
+            done
+        fi
         
-        # Asegurar que deploy existe
-        mkdir -p $DOCKER_DIR/deploy
-        cp -f "$SCRIPT_DIR"/* $DOCKER_DIR/deploy/ 2>/dev/null || true
+        # Verificar que deploy existe
+        if [ ! -d "$DOCKER_DIR/deploy" ]; then
+            log_warning "Creando directorio deploy manualmente..."
+            mkdir -p "$DOCKER_DIR/deploy"
+            cp -f "$SCRIPT_DIR"/* "$DOCKER_DIR/deploy/"
+        fi
         
-        log_success "Archivos copiados a $DOCKER_DIR"
+        # Verificar archivos criticos
+        if [ -f "$DOCKER_DIR/deploy/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
+            log_success "Archivos copiados a $DOCKER_DIR"
+            ls -la "$DOCKER_DIR/deploy/" | head -5
+        else
+            log_error "Faltan archivos criticos. Contenido de $DOCKER_DIR:"
+            ls -la "$DOCKER_DIR/"
+            exit 1
+        fi
     else
         log_warning "Copia manualmente los archivos del proyecto a: $DOCKER_DIR"
     fi

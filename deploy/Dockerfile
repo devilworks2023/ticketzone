@@ -6,8 +6,8 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
-# Copy deployment package.json (sin @rork-ai/toolkit-sdk)
-COPY deploy/package.deploy.json ./package.json
+# Copy package.json for deployment
+COPY package.deploy.json ./package.json
 
 # Install dependencies with legacy peer deps for compatibility
 RUN npm install --legacy-peer-deps
@@ -35,7 +35,7 @@ RUN npx expo export -p web
 FROM nginx:alpine AS production
 
 # Copy nginx config
-COPY deploy/nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html

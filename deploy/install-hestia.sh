@@ -223,12 +223,24 @@ setup_app_directory() {
     rm -rf "$DOCKER_DIR/.git" 2>/dev/null || true
     rm -rf "$DOCKER_DIR/deploy" 2>/dev/null || true
     
-    # Copiar Dockerfile al directorio docker (CRITICO)
-    log_info "Copiando Dockerfile desde $DEPLOY_DIR a $DOCKER_DIR"
+    # Copiar archivos de deploy al directorio docker (CRITICO)
+    log_info "Copiando archivos de deploy desde $DEPLOY_DIR a $DOCKER_DIR"
+    
+    # Copiar Dockerfile
     cp -fv "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile" || {
         log_error "FALLO al copiar Dockerfile"
-        log_info "Origen: $DEPLOY_DIR/Dockerfile"
-        ls -la "$DEPLOY_DIR/" 2>&1 || echo "No se puede listar $DEPLOY_DIR"
+        exit 1
+    }
+    
+    # Copiar package.deploy.json (CRITICO para el build)
+    cp -fv "$DEPLOY_DIR/package.deploy.json" "$DOCKER_DIR/package.deploy.json" || {
+        log_error "FALLO al copiar package.deploy.json"
+        exit 1
+    }
+    
+    # Copiar nginx.conf (CRITICO para el build)
+    cp -fv "$DEPLOY_DIR/nginx.conf" "$DOCKER_DIR/nginx.conf" || {
+        log_error "FALLO al copiar nginx.conf"
         exit 1
     }
     
@@ -463,10 +475,14 @@ start_docker_app() {
         # Buscar Dockerfile en ubicaciones conocidas
         if [ -f "/tmp/ticketzone/deploy/Dockerfile" ]; then
             cp -f "/tmp/ticketzone/deploy/Dockerfile" "./Dockerfile"
-            log_success "Dockerfile copiado desde /tmp/ticketzone/deploy/"
+            cp -f "/tmp/ticketzone/deploy/package.deploy.json" "./package.deploy.json" 2>/dev/null || true
+            cp -f "/tmp/ticketzone/deploy/nginx.conf" "./nginx.conf" 2>/dev/null || true
+            log_success "Archivos de deploy copiados desde /tmp/ticketzone/deploy/"
         elif [ -f "$SCRIPT_DIR/Dockerfile" ]; then
             cp -f "$SCRIPT_DIR/Dockerfile" "./Dockerfile"
-            log_success "Dockerfile copiado desde $SCRIPT_DIR"
+            cp -f "$SCRIPT_DIR/package.deploy.json" "./package.deploy.json" 2>/dev/null || true
+            cp -f "$SCRIPT_DIR/nginx.conf" "./nginx.conf" 2>/dev/null || true
+            log_success "Archivos de deploy copiados desde $SCRIPT_DIR"
         else
             log_error "No se encuentra Dockerfile en ninguna ubicacion"
             exit 1
@@ -488,8 +504,10 @@ start_docker_app() {
             cp -r /tmp/ticketzone/* ./ 2>/dev/null || true
             cp -r /tmp/ticketzone/.[!.]* ./ 2>/dev/null || true
             rm -rf ./node_modules ./.git ./deploy 2>/dev/null || true
-            # Asegurar que Dockerfile esta presente
+            # Asegurar que archivos de deploy estan presentes
             cp -f /tmp/ticketzone/deploy/Dockerfile ./Dockerfile 2>/dev/null || true
+            cp -f /tmp/ticketzone/deploy/package.deploy.json ./package.deploy.json 2>/dev/null || true
+            cp -f /tmp/ticketzone/deploy/nginx.conf ./nginx.conf 2>/dev/null || true
             log_success "Proyecto copiado desde /tmp/ticketzone/"
         else
             log_error "No se encuentra el proyecto en /tmp/ticketzone/"

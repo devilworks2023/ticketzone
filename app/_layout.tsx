@@ -20,13 +20,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
-    const inBuyerGroup = segments[0] === 'buyer';
-    const inPurchaseGroup = segments[0] === 'purchase';
+    const inTabsGroup = segments[0] === '(tabs)';
 
-    if (!isAuthenticated && !inAuthGroup && !inBuyerGroup && !inPurchaseGroup) {
+    if (!isAuthenticated && inTabsGroup) {
       router.replace('/auth/login');
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/dashboard');
     }
   }, [isAuthenticated, isLoading, segments]);
 
@@ -44,6 +43,7 @@ function RootLayoutNav() {
         contentStyle: { backgroundColor: Colors.dark.background },
       }}
     >
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen 
         name="event/[id]" 

@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.textMuted,
     fontWeight: '600',
     minWidth: 60,
-    textAlign: 'right',
+    textAlign: 'right' as const,
   },
   actionsGrid: {
     flexDirection: 'row',

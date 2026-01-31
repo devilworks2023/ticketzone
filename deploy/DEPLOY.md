@@ -1,51 +1,53 @@
-# TicketZone - Guía de Despliegue en Ubuntu 24.04
+# TicketZone - Guía de Despliegue
 
-## Requisitos
-- VPS con Ubuntu 24.04 LTS (limpio, sin panel)
-- Mínimo 1GB RAM, 1 CPU
-- Dominio apuntando al servidor (DNS configurado)
-- Acceso root al servidor
+## Requisitos del Servidor
 
-## Instalación Automática (Recomendado)
+- **Sistema Operativo:** Ubuntu 24.04 LTS (recomendado)
+- **RAM:** Mínimo 1GB (recomendado 2GB)
+- **Disco:** Mínimo 10GB
+- **Acceso:** Root o sudo
 
-### 1. Conectar al servidor
+## Instalación Rápida
+
+### 1. Subir archivos al servidor
+
 ```bash
-ssh root@TU_IP_DEL_SERVIDOR
+# Opción A: Clonar desde repositorio
+git clone https://tu-repositorio/ticketzone.git /tmp/ticketzone
+
+# Opción B: Subir por SCP/SFTP a /tmp/ticketzone
 ```
 
-### 2. Descargar el proyecto
-```bash
-cd /tmp
-git clone https://github.com/TU_USUARIO/ticketzone.git
-cd ticketzone
-```
+### 2. Ejecutar instalador
 
-### 3. Ejecutar el instalador
 ```bash
-chmod +x deploy/install.sh
-bash deploy/install.sh
+cd /tmp/ticketzone/deploy
+sudo bash install.sh
 ```
 
 El instalador te pedirá:
-- **Dominio**: El dominio donde se servirá la app (ej: tickets.tudominio.com)
-- **Email SSL**: Para el certificado Let's Encrypt
-- **Puerto**: Puerto interno de Docker (default: 3080)
-- **Directorio**: Donde se instalará la app (default: /opt/ticketzone)
-- **Firewall**: Si deseas configurar UFW
+- **Dominio:** ej: tickets.tudominio.com
+- **Email SSL:** para certificado Let's Encrypt (opcional)
+- **Puerto:** puerto interno Docker (default: 3080)
+- **Directorio:** donde instalar (default: /opt/ticketzone)
 
-### 4. ¡Listo!
-Una vez completada la instalación, tu app estará disponible en:
-- `https://tudominio.com` (con SSL)
-- `http://tudominio.com` (sin SSL)
+## Estructura del Sistema
 
----
+```
+/opt/ticketzone/
+├── app/                    # Frontend React Native Web
+├── backend/                # Backend Node.js
+│   └── server.js          # Servidor principal
+├── deploy/                 # Archivos de despliegue
+├── data/                   # Base de datos SQLite
+│   └── ticketzone.db
+└── ticketzone.sh          # Script de gestión
+```
 
 ## Comandos de Gestión
 
-Después de la instalación, puedes usar el comando `ticketzone`:
-
 ```bash
-# Ver estado
+# Estado de la aplicación
 ticketzone status
 
 # Ver logs en tiempo real
@@ -57,199 +59,169 @@ ticketzone restart
 # Reconstruir desde cero
 ticketzone rebuild
 
-# Detener aplicación
-ticketzone stop
+# Backup de base de datos
+ticketzone db-backup
 
-# Iniciar aplicación
-ticketzone start
-
-# Actualizar aplicación
-ticketzone update
+# Acceder a consola SQLite
+ticketzone db-shell
 
 # Renovar certificado SSL
 ticketzone ssl-renew
 ```
 
----
+## Base de Datos
 
-## Instalación Manual
+El sistema usa **SQLite** para simplicidad y portabilidad.
 
-Si prefieres instalar paso a paso:
+### Tablas principales:
 
-### 1. Actualizar sistema
-```bash
-apt update && apt upgrade -y
+| Tabla | Descripción |
+|-------|-------------|
+| `events` | Eventos/fiestas |
+| `ticket_tiers` | Tipos de entrada por evento |
+| `tickets` | Entradas vendidas |
+| `sellers` | Vendedores/RRPP |
+| `seller_commissions` | Comisiones por vendedor |
+| `promoters` | Promotores/organizadores |
+| `promoter_payouts` | Pagos a promotores |
+| `settings` | Configuración plataforma |
+| `users` | Usuarios admin |
+
+### Consultas útiles:
+
+```sql
+-- Ver total de ventas
+SELECT SUM(price) as total FROM tickets;
+
+-- Ver ventas por evento
+SELECT e.name, COUNT(t.id) as vendidas, SUM(t.price) as total
+FROM events e
+LEFT JOIN tickets t ON e.id = t.event_id
+GROUP BY e.id;
+
+-- Ver top vendedores
+SELECT name, code, total_sales, total_revenue
+FROM sellers ORDER BY total_revenue DESC;
 ```
 
-### 2. Instalar Docker
+## API Backend
+
+El backend expone una API tRPC en `/api/trpc`.
+
+### Endpoints principales:
+
+- `events.list` - Listar eventos
+- `events.create` - Crear evento
+- `tickets.create` - Vender entrada
+- `tickets.validate` - Validar entrada
+- `sellers.list` - Listar vendedores
+- `promoters.list` - Listar promotores
+- `stats.dashboard` - Estadísticas generales
+
+### Health Check:
+
 ```bash
-curl -fsSL https://get.docker.com | sh
-systemctl enable docker
-systemctl start docker
+curl http://localhost/api/health
+# Respuesta: {"status":"healthy","timestamp":"..."}
 ```
 
-### 3. Instalar Nginx
+## SSL/HTTPS
+
+### Configurar SSL manualmente:
+
 ```bash
-apt install -y nginx
-systemctl enable nginx
+certbot --nginx -d tudominio.com -m tu@email.com --agree-tos
 ```
 
-### 4. Instalar Certbot (SSL)
+### Renovar certificado:
+
 ```bash
-apt install -y certbot python3-certbot-nginx
-```
-
-### 5. Configurar Firewall
-```bash
-ufw allow ssh
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-```
-
-### 6. Copiar proyecto
-```bash
-mkdir -p /opt/ticketzone
-cp -r /tmp/ticketzone/* /opt/ticketzone/
-cd /opt/ticketzone
-```
-
-### 7. Construir y ejecutar
-```bash
-docker compose -f deploy/docker-compose.yml build
-docker compose -f deploy/docker-compose.yml up -d
-```
-
-### 8. Configurar Nginx
-Crear `/etc/nginx/sites-available/tudominio.com`:
-```nginx
-server {
-    listen 80;
-    server_name tudominio.com www.tudominio.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:3080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Habilitar sitio:
-```bash
-ln -s /etc/nginx/sites-available/tudominio.com /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default
-nginx -t
-systemctl restart nginx
-```
-
-### 9. Configurar SSL
-```bash
-certbot --nginx -d tudominio.com -d www.tudominio.com
-```
-
----
-
-## Solución de Problemas
-
-### La app no carga
-```bash
-# Ver estado del contenedor
-docker ps -a
-
-# Ver logs del contenedor
-docker logs ticketzone-app
-
-# Ver logs de Nginx
-tail -f /var/log/nginx/error.log
-```
-
-### Error de build
-```bash
-# Limpiar todo y reconstruir
-docker system prune -a
-cd /opt/ticketzone
-docker compose -f deploy/docker-compose.yml build --no-cache
-docker compose -f deploy/docker-compose.yml up -d
-```
-
-### Puerto ocupado
-```bash
-# Ver qué usa el puerto
-lsof -i :3080
-
-# Cambiar puerto en docker-compose.yml y reiniciar
-```
-
-### Certificado SSL no funciona
-```bash
-# Verificar que el dominio apunta al servidor
-dig tudominio.com
-
-# Obtener certificado manualmente
-certbot certonly --nginx -d tudominio.com
-
-# Renovar certificado
+ticketzone ssl-renew
+# o
 certbot renew
 ```
 
-### Firewall bloquea conexiones
-```bash
-# Ver reglas actuales
-ufw status verbose
+## Backups
 
-# Permitir puerto específico
-ufw allow 80/tcp
-ufw allow 443/tcp
+### Backup automático (cron):
+
+```bash
+# Editar crontab
+crontab -e
+
+# Añadir línea para backup diario a las 3:00 AM
+0 3 * * * /opt/ticketzone/ticketzone.sh db-backup
 ```
 
----
-
-## Archivos Importantes
-
-| Archivo | Descripción |
-|---------|-------------|
-| `/opt/ticketzone/` | Directorio de la aplicación |
-| `/etc/nginx/sites-available/` | Configuración de Nginx |
-| `/var/log/nginx/` | Logs de Nginx |
-| `/etc/systemd/system/ticketzone.service` | Servicio systemd |
-
----
-
-## Actualización
-
-Para actualizar la aplicación:
+### Restaurar backup:
 
 ```bash
-cd /opt/ticketzone
-git pull  # Si usas git
+# Detener aplicación
+ticketzone stop
+
+# Copiar backup
+cp /opt/ticketzone/backups/ticketzone_FECHA.db /opt/ticketzone/data/ticketzone.db
+
+# Iniciar aplicación
+ticketzone start
+```
+
+## Funcionalidades Futuras
+
+### Pagos con Stripe Connect
+
+El sistema está preparado para integrar Stripe Connect, permitiendo:
+- Pagos directos a promotores
+- Comisiones automáticas
+- Dashboard de ganancias por promotor
+
+Para activar, contacta para configurar las claves de Stripe.
+
+### Campos preparados:
+
+- `promoters.stripe_account_id` - ID cuenta Stripe del promotor
+- `promoters.stripe_account_status` - Estado de la cuenta
+- `tickets.payment_intent_id` - ID del pago en Stripe
+- `promoter_payouts` - Registro de transferencias
+
+## Solución de Problemas
+
+### La aplicación no responde
+
+```bash
+# Ver logs
+ticketzone logs
+
+# Reiniciar
+ticketzone restart
+
+# Si persiste, reconstruir
 ticketzone rebuild
 ```
 
-O manualmente:
+### Error de base de datos
+
 ```bash
-cd /opt/ticketzone
-docker compose -f deploy/docker-compose.yml down
-docker compose -f deploy/docker-compose.yml build --no-cache
-docker compose -f deploy/docker-compose.yml up -d
+# Verificar permisos
+ls -la /opt/ticketzone/data/
+
+# Verificar integridad
+sqlite3 /opt/ticketzone/data/ticketzone.db "PRAGMA integrity_check;"
 ```
 
----
+### Nginx no funciona
 
-## Backup
-
-### Hacer backup
 ```bash
-tar -czvf ticketzone-backup-$(date +%Y%m%d).tar.gz /opt/ticketzone
+# Verificar configuración
+nginx -t
+
+# Ver logs
+tail -f /var/log/nginx/error.log
+
+# Reiniciar
+systemctl restart nginx
 ```
 
-### Restaurar backup
-```bash
-tar -xzvf ticketzone-backup-YYYYMMDD.tar.gz -C /
-ticketzone rebuild
-```
+## Contacto
+
+Para soporte técnico o activar funcionalidades premium como pagos con Stripe, contacta al desarrollador.

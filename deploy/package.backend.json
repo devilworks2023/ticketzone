@@ -1,0 +1,24 @@
+{
+  "name": "ticketzone-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-specifier-resolution=node backend/server.js",
+    "dev": "tsx watch backend/server.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.12.0",
+    "@hono/trpc-server": "^0.3.2",
+    "@trpc/server": "^10.45.0",
+    "better-sqlite3": "^11.3.0",
+    "hono": "^4.5.0",
+    "superjson": "^2.2.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

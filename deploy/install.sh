@@ -1,8 +1,9 @@
 #!/bin/bash
 
 #############################################
-#  TicketZone - Instalador para Ubuntu 24.04
-#  VPS limpio sin panel de control
+#  TicketZone - Instalador Completo
+#  Ubuntu 24.04 VPS (sin panel)
+#  Frontend + Backend + Base de Datos
 #############################################
 
 set -e
@@ -40,7 +41,8 @@ print_banner() {
     echo "║          ███████╗╚██████╔╝██║ ╚████║███████╗                  ║"
     echo "║          ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝                  ║"
     echo "║                                                               ║"
-    echo "║        Instalador para Ubuntu 24.04 (VPS limpio)              ║"
+    echo "║     Instalador Completo - Ubuntu 24.04 VPS                    ║"
+    echo "║     Frontend + Backend + Base de Datos SQLite                 ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -78,7 +80,6 @@ get_config() {
     echo -e "${CYAN}════════════════════════════════════════════${NC}"
     echo ""
     
-    # Dominio
     while true; do
         read -p "Dominio para la aplicacion (ej: tickets.tudominio.com): " DOMAIN
         if [ -z "$DOMAIN" ]; then
@@ -88,32 +89,27 @@ get_config() {
         fi
     done
     
-    # Email para SSL
     echo ""
-    read -p "Email para certificado SSL (Let's Encrypt): " SSL_EMAIL
+    read -p "Email para certificado SSL (Let's Encrypt) [dejar vacio para omitir SSL]: " SSL_EMAIL
     if [ -z "$SSL_EMAIL" ]; then
-        log_warning "Sin email, no se podra configurar SSL automaticamente"
+        log_warning "Sin email, SSL se configurara manualmente despues"
         ENABLE_SSL="n"
     else
         ENABLE_SSL="s"
     fi
     
-    # Puerto interno
     echo ""
     read -p "Puerto interno para Docker [3080]: " APP_PORT
     APP_PORT=${APP_PORT:-3080}
     
-    # Directorio de instalacion
     echo ""
     read -p "Directorio de instalacion [/opt/ticketzone]: " INSTALL_DIR
     INSTALL_DIR=${INSTALL_DIR:-/opt/ticketzone}
     
-    # Firewall
     echo ""
     read -p "¿Configurar firewall UFW? (s/n) [s]: " SETUP_UFW
     SETUP_UFW=${SETUP_UFW:-s}
     
-    # Resumen
     echo ""
     echo -e "${CYAN}════════════════════════════════════════════${NC}"
     echo -e "${CYAN}         RESUMEN DE CONFIGURACION            ${NC}"
@@ -137,13 +133,13 @@ get_config() {
 update_system() {
     log_step "Actualizando sistema..."
     apt-get update -y
-    apt-get upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
     log_success "Sistema actualizado"
 }
 
 install_dependencies() {
     log_step "Instalando dependencias..."
-    apt-get install -y \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
         curl \
         wget \
         git \
@@ -151,7 +147,9 @@ install_dependencies() {
         gnupg \
         lsb-release \
         software-properties-common \
-        ufw
+        ufw \
+        sqlite3 \
+        jq
     log_success "Dependencias instaladas"
 }
 
@@ -162,21 +160,13 @@ install_docker() {
         log_success "Docker ya instalado: $(docker --version | cut -d' ' -f3)"
     else
         log_info "Instalando Docker..."
-        
-        # Eliminar versiones antiguas
         apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
-        
-        # Instalar Docker oficial
         curl -fsSL https://get.docker.com | sh
-        
-        # Habilitar e iniciar
         systemctl enable docker
         systemctl start docker
-        
         log_success "Docker instalado: $(docker --version | cut -d' ' -f3)"
     fi
     
-    # Verificar Docker Compose
     if docker compose version &>/dev/null; then
         log_success "Docker Compose disponible"
     else
@@ -223,18 +213,12 @@ setup_firewall() {
     
     log_step "Configurando firewall UFW..."
     
-    # Permitir SSH primero (MUY IMPORTANTE)
     ufw allow ssh
     ufw allow 22/tcp
-    
-    # Permitir HTTP y HTTPS
     ufw allow 80/tcp
     ufw allow 443/tcp
-    
-    # Permitir Nginx
     ufw allow 'Nginx Full'
     
-    # Habilitar firewall
     echo "y" | ufw enable
     
     log_success "Firewall configurado"
@@ -244,10 +228,9 @@ setup_firewall() {
 setup_app_directory() {
     log_step "Configurando directorio de la aplicacion..."
     
-    # Crear directorio
     mkdir -p "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR/data"
     
-    # Detectar donde estan los archivos del proyecto
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
     if [ -f "$SCRIPT_DIR/../package.json" ]; then
@@ -260,19 +243,19 @@ setup_app_directory() {
         log_error "No se encontro el proyecto"
         log_info "Opciones:"
         log_info "  1. Ejecuta este script desde el directorio del proyecto"
-        log_info "  2. Clona el proyecto en /tmp/ticketzone primero:"
-        log_info "     git clone https://github.com/TU_USUARIO/ticketzone.git /tmp/ticketzone"
+        log_info "  2. Clona el proyecto en /tmp/ticketzone primero"
         exit 1
     fi
     
-    # Copiar archivos
     log_info "Copiando archivos a $INSTALL_DIR..."
     cp -r "$PROJECT_DIR"/* "$INSTALL_DIR/"
     cp -r "$PROJECT_DIR"/.[!.]* "$INSTALL_DIR/" 2>/dev/null || true
     
-    # Limpiar archivos innecesarios
     rm -rf "$INSTALL_DIR/node_modules" 2>/dev/null || true
     rm -rf "$INSTALL_DIR/.git" 2>/dev/null || true
+    rm -rf "$INSTALL_DIR/.expo" 2>/dev/null || true
+    
+    chmod 755 "$INSTALL_DIR/data"
     
     log_success "Archivos copiados a $INSTALL_DIR"
 }
@@ -286,6 +269,7 @@ DOMAIN=$DOMAIN
 APP_PORT=$APP_PORT
 NODE_ENV=production
 TZ=Europe/Madrid
+DATABASE_PATH=/app/data/ticketzone.db
 ENVEOF
 
     log_success "Archivo .env creado"
@@ -294,11 +278,12 @@ ENVEOF
 configure_nginx() {
     log_step "Configurando Nginx como proxy reverso..."
     
-    # Crear configuracion para el dominio
     cat > "/etc/nginx/sites-available/$DOMAIN" << NGINXEOF
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
+
+    client_max_body_size 10M;
 
     location / {
         proxy_pass http://127.0.0.1:$APP_PORT;
@@ -313,30 +298,23 @@ server {
         proxy_read_timeout 86400;
         proxy_connect_timeout 60;
         proxy_send_timeout 60;
-        
-        # Gzip
-        gzip on;
-        gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
     }
 
-    # Health check
     location /health {
         proxy_pass http://127.0.0.1:$APP_PORT/health;
         access_log off;
     }
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
 }
 NGINXEOF
 
-    # Habilitar sitio
     ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
-    
-    # Eliminar default si existe
     rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
     
-    # Verificar configuracion
     nginx -t
-    
-    # Reiniciar Nginx
     systemctl restart nginx
     
     log_success "Nginx configurado para $DOMAIN"
@@ -350,19 +328,13 @@ setup_ssl() {
     
     log_step "Configurando SSL con Let's Encrypt..."
     
-    # Obtener certificado
-    certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --agree-tos -m "$SSL_EMAIL" --redirect || {
-        log_warning "No se pudo obtener certificado para www.$DOMAIN"
-        log_info "Intentando solo con $DOMAIN..."
-        certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$SSL_EMAIL" --redirect || {
-            log_warning "No se pudo obtener certificado SSL automaticamente"
-            log_info "Puedes intentarlo manualmente mas tarde con:"
-            log_info "  certbot --nginx -d $DOMAIN"
-            return
-        }
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$SSL_EMAIL" --redirect || {
+        log_warning "No se pudo obtener certificado SSL automaticamente"
+        log_info "Puedes intentarlo manualmente mas tarde con:"
+        log_info "  certbot --nginx -d $DOMAIN"
+        return
     }
     
-    # Configurar renovacion automatica
     systemctl enable certbot.timer
     systemctl start certbot.timer
     
@@ -370,33 +342,23 @@ setup_ssl() {
 }
 
 build_docker_app() {
-    log_step "Construyendo aplicacion Docker..."
+    log_step "Construyendo aplicacion Docker (esto puede tardar 5-10 minutos)..."
     
     cd "$INSTALL_DIR"
     
-    # Verificar archivos necesarios
     if [ ! -f "deploy/Dockerfile" ]; then
         log_error "Dockerfile no encontrado en deploy/"
         exit 1
     fi
     
-    if [ ! -f "deploy/docker-compose.yml" ]; then
-        log_error "docker-compose.yml no encontrado en deploy/"
-        exit 1
-    fi
-    
-    # Actualizar puerto en docker-compose
     sed -i "s/3080:80/$APP_PORT:80/g" deploy/docker-compose.yml
     
-    # Detener contenedor existente
     docker stop ticketzone-app 2>/dev/null || true
     docker rm ticketzone-app 2>/dev/null || true
     
-    # Construir imagen
-    log_info "Construyendo imagen (esto puede tardar varios minutos)..."
+    log_info "Construyendo imagen Docker..."
     docker compose -f deploy/docker-compose.yml build --no-cache
     
-    # Iniciar contenedor
     log_info "Iniciando contenedor..."
     docker compose -f deploy/docker-compose.yml up -d
     
@@ -408,7 +370,7 @@ create_systemd_service() {
     
     cat > "/etc/systemd/system/ticketzone.service" << SERVICEEOF
 [Unit]
-Description=TicketZone Application
+Description=TicketZone - Plataforma de Venta de Tickets
 Requires=docker.service
 After=docker.service nginx.service
 
@@ -488,12 +450,23 @@ case "$1" in
         certbot renew
         systemctl restart nginx
         ;;
+    db-backup)
+        BACKUP_FILE="$INSTALL_DIR/backups/ticketzone_$(date +%Y%m%d_%H%M%S).db"
+        mkdir -p "$INSTALL_DIR/backups"
+        docker cp ticketzone-app:/app/data/ticketzone.db "$BACKUP_FILE"
+        echo -e "${GREEN}Backup creado: $BACKUP_FILE${NC}"
+        ;;
+    db-shell)
+        echo -e "${CYAN}Conectando a la base de datos...${NC}"
+        docker exec -it ticketzone-app sqlite3 /app/data/ticketzone.db
+        ;;
     *)
         echo ""
         echo -e "${CYAN}TicketZone - Script de Gestion${NC}"
         echo ""
-        echo "Uso: $0 {start|stop|restart|rebuild|logs|status|update|ssl-renew}"
+        echo "Uso: $0 {comando}"
         echo ""
+        echo "Comandos disponibles:"
         echo "  start      - Inicia la aplicacion"
         echo "  stop       - Detiene la aplicacion"
         echo "  restart    - Reinicia la aplicacion"
@@ -502,6 +475,8 @@ case "$1" in
         echo "  status     - Muestra estado actual"
         echo "  update     - Actualiza la aplicacion"
         echo "  ssl-renew  - Renueva certificado SSL"
+        echo "  db-backup  - Crea backup de la base de datos"
+        echo "  db-shell   - Abre consola SQLite"
         echo ""
         ;;
 esac
@@ -510,7 +485,6 @@ MANAGEEOF
     sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" "$INSTALL_DIR/ticketzone.sh"
     chmod +x "$INSTALL_DIR/ticketzone.sh"
     
-    # Crear enlace simbolico en /usr/local/bin
     ln -sf "$INSTALL_DIR/ticketzone.sh" /usr/local/bin/ticketzone
     
     log_success "Script de gestion creado: ticketzone"
@@ -519,9 +493,22 @@ MANAGEEOF
 verify_installation() {
     log_step "Verificando instalacion..."
     
-    sleep 5
+    echo ""
+    log_info "Esperando a que la aplicacion inicie (60 segundos max)..."
     
-    # Verificar Docker
+    for i in $(seq 1 60); do
+        if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$APP_PORT/api/health" 2>/dev/null | grep -qE "200"; then
+            log_success "Backend funcionando correctamente"
+            break
+        fi
+        if [ $i -eq 60 ]; then
+            log_warning "Backend tardando en responder, verificar logs con: ticketzone logs"
+        fi
+        sleep 1
+        echo -n "."
+    done
+    echo ""
+    
     if docker ps --filter "name=ticketzone-app" --format "{{.Status}}" | grep -q "Up"; then
         log_success "Contenedor Docker funcionando"
     else
@@ -529,18 +516,10 @@ verify_installation() {
         log_info "Verifica con: docker logs ticketzone-app"
     fi
     
-    # Verificar Nginx
     if systemctl is-active --quiet nginx; then
         log_success "Nginx funcionando"
     else
         log_warning "Nginx no esta activo"
-    fi
-    
-    # Verificar respuesta local
-    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$APP_PORT" | grep -qE "200|301|302"; then
-        log_success "Aplicacion responde en puerto $APP_PORT"
-    else
-        log_warning "Aplicacion no responde aun (puede tardar unos segundos mas)"
     fi
 }
 
@@ -559,9 +538,11 @@ show_final_info() {
     echo ""
     
     if [[ "$ENABLE_SSL" =~ ^[Ss]$ ]]; then
-        echo -e "  ${GREEN}URL:${NC} https://$DOMAIN"
+        echo -e "  ${GREEN}URL Principal:${NC} https://$DOMAIN"
+        echo -e "  ${GREEN}API Backend:${NC}   https://$DOMAIN/api"
     else
-        echo -e "  ${GREEN}URL:${NC} http://$DOMAIN"
+        echo -e "  ${GREEN}URL Principal:${NC} http://$DOMAIN"
+        echo -e "  ${GREEN}API Backend:${NC}   http://$DOMAIN/api"
     fi
     echo ""
     
@@ -569,12 +550,12 @@ show_final_info() {
     echo -e "${CYAN}           COMANDOS DE GESTION               ${NC}"
     echo -e "${CYAN}════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "  ${YELLOW}Ver estado:${NC}     ticketzone status"
-    echo -e "  ${YELLOW}Ver logs:${NC}       ticketzone logs"
-    echo -e "  ${YELLOW}Reiniciar:${NC}      ticketzone restart"
-    echo -e "  ${YELLOW}Reconstruir:${NC}    ticketzone rebuild"
-    echo -e "  ${YELLOW}Detener:${NC}        ticketzone stop"
-    echo -e "  ${YELLOW}Actualizar:${NC}     ticketzone update"
+    echo -e "  ${YELLOW}Ver estado:${NC}       ticketzone status"
+    echo -e "  ${YELLOW}Ver logs:${NC}         ticketzone logs"
+    echo -e "  ${YELLOW}Reiniciar:${NC}        ticketzone restart"
+    echo -e "  ${YELLOW}Reconstruir:${NC}      ticketzone rebuild"
+    echo -e "  ${YELLOW}Backup BD:${NC}        ticketzone db-backup"
+    echo -e "  ${YELLOW}Consola BD:${NC}       ticketzone db-shell"
     echo ""
     
     echo -e "${CYAN}════════════════════════════════════════════${NC}"
@@ -582,35 +563,47 @@ show_final_info() {
     echo -e "${CYAN}════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${BLUE}Directorio app:${NC}     $INSTALL_DIR"
+    echo -e "  ${BLUE}Base de datos:${NC}      $INSTALL_DIR/data/ticketzone.db"
     echo -e "  ${BLUE}Nginx config:${NC}       /etc/nginx/sites-available/$DOMAIN"
     echo -e "  ${BLUE}Logs Docker:${NC}        docker logs ticketzone-app"
-    echo -e "  ${BLUE}Logs Nginx:${NC}         /var/log/nginx/"
     echo ""
     
-    if [[ "$ENABLE_SSL" =~ ^[Ss]$ ]]; then
-        echo -e "${CYAN}════════════════════════════════════════════${NC}"
-        echo -e "${CYAN}              CERTIFICADO SSL               ${NC}"
-        echo -e "${CYAN}════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "  El certificado se renueva automaticamente."
-        echo -e "  Para renovar manualmente: ticketzone ssl-renew"
-        echo ""
-    fi
-    
-    echo -e "${GREEN}¡Listo! Tu aplicacion deberia estar funcionando en:${NC}"
-    if [[ "$ENABLE_SSL" =~ ^[Ss]$ ]]; then
-        echo -e "${GREEN}  https://$DOMAIN${NC}"
-    else
-        echo -e "${GREEN}  http://$DOMAIN${NC}"
-    fi
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}           FUNCIONALIDADES                   ${NC}"
+    echo -e "${CYAN}════════════════════════════════════════════${NC}"
     echo ""
+    echo -e "  ${GREEN}✓${NC} Frontend web completo"
+    echo -e "  ${GREEN}✓${NC} Backend API con tRPC"
+    echo -e "  ${GREEN}✓${NC} Base de datos SQLite"
+    echo -e "  ${GREEN}✓${NC} Sistema de eventos y entradas"
+    echo -e "  ${GREEN}✓${NC} Sistema de vendedores/RRPP"
+    echo -e "  ${GREEN}✓${NC} Sistema de promotores (preparado)"
+    echo -e "  ${GREEN}✓${NC} Validacion de entradas por QR"
+    echo -e "  ${GREEN}✓${NC} Estadisticas y reportes"
+    echo ""
+    
+    echo -e "${YELLOW}════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}           PROXIMOS PASOS                    ${NC}"
+    echo -e "${YELLOW}════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "  1. Accede a ${GREEN}http://$DOMAIN${NC} para verificar"
+    echo -e "  2. Configura SSL si no lo hiciste: ${CYAN}certbot --nginx -d $DOMAIN${NC}"
+    echo -e "  3. Crea tu primer evento desde el panel admin"
+    echo -e "  4. Para agregar pagos con Stripe, contactame"
+    echo ""
+    
+    if [[ ! "$ENABLE_SSL" =~ ^[Ss]$ ]]; then
+        echo -e "${YELLOW}IMPORTANTE: Configura SSL para produccion:${NC}"
+        echo -e "  certbot --nginx -d $DOMAIN -m tu@email.com --agree-tos"
+        echo ""
+    fi
 }
 
 main() {
     print_banner
     
-    echo -e "${YELLOW}Este script instalara TicketZone en tu servidor Ubuntu 24.04${NC}"
-    echo -e "${YELLOW}Se instalara: Docker, Nginx, Certbot (SSL) y la aplicacion${NC}"
+    echo -e "${YELLOW}Este script instalara TicketZone completo en tu servidor${NC}"
+    echo -e "${YELLOW}Incluye: Frontend, Backend, Base de Datos SQLite${NC}"
     echo ""
     
     read -p "¿Continuar con la instalacion? (s/n): " CONTINUE

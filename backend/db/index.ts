@@ -1,0 +1,189 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+
+const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'ticketzone.db');
+
+let db: Database.Database | null = null;
+
+export function getDatabase(): Database.Database {
+  if (!db) {
+    const fs = require('fs');
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    db = new Database(DB_PATH);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    
+    initializeDatabase(db);
+  }
+  return db;
+}
+
+function initializeDatabase(db: Database.Database) {
+  db.exec(`
+    -- Promotores (organizadores de eventos que reciben pagos directos)
+    CREATE TABLE IF NOT EXISTS promoters (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      company_name TEXT,
+      tax_id TEXT,
+      stripe_account_id TEXT,
+      stripe_account_status TEXT DEFAULT 'pending',
+      commission_percentage REAL DEFAULT 5.0,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Eventos
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      promoter_id TEXT,
+      name TEXT NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT NOT NULL,
+      venue TEXT NOT NULL,
+      location TEXT NOT NULL,
+      image TEXT,
+      description TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id)
+    );
+
+    -- Tipos de entrada
+    CREATE TABLE IF NOT EXISTS ticket_tiers (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      quantity INTEGER NOT NULL,
+      sold INTEGER DEFAULT 0,
+      description TEXT,
+      includes_bus INTEGER DEFAULT 0,
+      is_vip INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+    );
+
+    -- Vendedores/RRPP
+    CREATE TABLE IF NOT EXISTS sellers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      code TEXT UNIQUE NOT NULL,
+      total_sales INTEGER DEFAULT 0,
+      total_revenue REAL DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Comisiones de vendedores
+    CREATE TABLE IF NOT EXISTS seller_commissions (
+      id TEXT PRIMARY KEY,
+      seller_id TEXT NOT NULL,
+      min_sales INTEGER NOT NULL,
+      max_sales INTEGER,
+      percentage REAL NOT NULL,
+      FOREIGN KEY (seller_id) REFERENCES sellers(id) ON DELETE CASCADE
+    );
+
+    -- Tickets/Entradas
+    CREATE TABLE IF NOT EXISTS tickets (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      tier_id TEXT NOT NULL,
+      buyer_name TEXT NOT NULL,
+      buyer_email TEXT NOT NULL,
+      buyer_phone TEXT,
+      qr_code TEXT UNIQUE NOT NULL,
+      purchase_date TEXT DEFAULT CURRENT_TIMESTAMP,
+      seller_id TEXT,
+      seller_code TEXT,
+      is_used INTEGER DEFAULT 0,
+      used_at TEXT,
+      payment_method TEXT NOT NULL,
+      payment_intent_id TEXT,
+      price REAL NOT NULL,
+      platform_fee REAL DEFAULT 0,
+      promoter_amount REAL DEFAULT 0,
+      seller_commission REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (event_id) REFERENCES events(id),
+      FOREIGN KEY (tier_id) REFERENCES ticket_tiers(id),
+      FOREIGN KEY (seller_id) REFERENCES sellers(id)
+    );
+
+    -- Pagos a promotores
+    CREATE TABLE IF NOT EXISTS promoter_payouts (
+      id TEXT PRIMARY KEY,
+      promoter_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      stripe_transfer_id TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id)
+    );
+
+    -- Pagos a vendedores
+    CREATE TABLE IF NOT EXISTS seller_payouts (
+      id TEXT PRIMARY KEY,
+      seller_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY (seller_id) REFERENCES sellers(id)
+    );
+
+    -- Usuarios admin
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT DEFAULT 'admin',
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Configuración de la plataforma
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Índices para mejor rendimiento
+    CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
+    CREATE INDEX IF NOT EXISTS idx_tickets_qr ON tickets(qr_code);
+    CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_id);
+    CREATE INDEX IF NOT EXISTS idx_events_promoter ON events(promoter_id);
+    CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
+  `);
+
+  const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };
+  if (settingsCount.count === 0) {
+    const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
+    insertSetting.run('platform_name', 'TicketZone');
+    insertSetting.run('platform_commission', '5.0');
+    insertSetting.run('currency', 'EUR');
+    insertSetting.run('stripe_enabled', 'false');
+  }
+}
+
+export function closeDatabase() {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}

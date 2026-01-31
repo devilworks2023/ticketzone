@@ -21,6 +21,9 @@ export interface Event {
   ticketTiers: TicketTier[];
   isActive: boolean;
   createdAt: string;
+  promoterId?: string;
+  promoterName?: string;
+  promoterCompany?: string;
 }
 
 export interface CommissionTier {
@@ -92,4 +95,43 @@ export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+}
+
+export interface Promoter {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  companyName?: string;
+  taxId?: string;
+  stripeAccountId?: string;
+  stripeAccountStatus: 'pending' | 'active' | 'disabled';
+  commissionPercentage: number;
+  isActive: boolean;
+  createdAt: string;
+  eventCount?: number;
+  totalEarnings?: number;
+  pendingPayout?: number;
+}
+
+export interface PromoterPayout {
+  id: string;
+  promoterId: string;
+  amount: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  stripeTransferId?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface DashboardStats {
+  totalRevenue: number;
+  totalTicketsSold: number;
+  platformEarnings: number;
+  todayRevenue: number;
+  todayTickets: number;
+  totalEvents: number;
+  activeEvents: number;
+  totalSellers: number;
+  totalPromoters: number;
 }

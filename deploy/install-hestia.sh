@@ -328,7 +328,20 @@ create_docker_compose() {
     DOCKER_DIR="/home/$HESTIA_USER/web/$DOMAIN/docker"
     
     # Crear directorio si no existe
-    mkdir -p "$DOCKER_DIR"
+    if [ ! -d "$DOCKER_DIR" ]; then
+        mkdir -p "$DOCKER_DIR" || {
+            log_error "No se pudo crear el directorio: $DOCKER_DIR"
+            # Intentar crear directorios padre
+            mkdir -p "/home/$HESTIA_USER/web/$DOMAIN" 2>/dev/null
+            mkdir -p "$DOCKER_DIR" || exit 1
+        }
+    fi
+    
+    # Verificar que el directorio existe
+    if [ ! -d "$DOCKER_DIR" ]; then
+        log_error "El directorio $DOCKER_DIR no existe y no se pudo crear"
+        exit 1
+    fi
     
     cat > "$DOCKER_DIR/docker-compose.hestia.yml" << COMPOSEEOF
 version: '3.8'

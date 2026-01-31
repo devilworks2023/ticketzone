@@ -1,183 +1,327 @@
-# TicketZone - Guía de Despliegue VPS
+# TicketZone - Guía de Despliegue Completa
 
-## Requisitos del Servidor
+## Servidor
+- **IP**: 82.223.44.155
+- **OS**: Ubuntu 22.04
+- **Panel**: Hestia Control Panel
+- **Dominio**: tickets.devil-works.com
 
-- **OS**: Ubuntu 20.04+, Debian 11+, CentOS 8+, o Rocky Linux
-- **RAM**: Mínimo 1GB (recomendado 2GB)
-- **CPU**: 1 vCPU mínimo
-- **Disco**: 10GB libre
-- **Puertos**: 80 (HTTP), 443 (HTTPS), 22 (SSH)
+---
 
-## Instalación Rápida
-
-### Opción 1: Script Automático (Recomendado)
+## PASO 1: Instalar Hestia (si no está instalado)
 
 ```bash
-# 1. Sube el proyecto al servidor
-scp -r ./* usuario@tu-servidor:/tmp/ticketzone/
+# Conectar al servidor
+ssh root@82.223.44.155
 
-# 2. Conecta al servidor
-ssh usuario@tu-servidor
+# Descargar e instalar Hestia
+wget https://raw.githubusercontent.com/hestiacp/hestiacp/release/install/hst-install.sh
+bash hst-install.sh --apache no --phpfpm yes --multiphp no --vsftpd no --proftpd no --named yes --mysql yes --postgresql no --exim no --dovecot no --sieve no --clamav no --spamassassin no --iptables yes --fail2ban yes --quota no --hostname server.example.com --email tu@email.com --password TuPasswordSegura --lang es
 
-# 3. Ejecuta el instalador
-cd /tmp/ticketzone
-chmod +x deploy/install.sh
-sudo ./deploy/install.sh
+# Reiniciar después de instalar
+reboot
 ```
 
-### Opción 2: Instalación Manual
+---
+
+## PASO 2: Crear Usuario y Dominio en Hestia
 
 ```bash
-# 1. Instala Docker
-curl -fsSL https://get.docker.com | sh
-systemctl enable docker && systemctl start docker
+# Conectar de nuevo
+ssh root@82.223.44.155
 
-# 2. Clona/copia el proyecto
-mkdir -p /opt/ticketzone
-cd /opt/ticketzone
-# Copia archivos aquí
+# Crear usuario (si no existe)
+v-add-user tiri TuPassword123! tu@email.com
 
-# 3. Construye y ejecuta
-docker-compose -f deploy/docker-compose.yml up -d --build
+# Crear dominio
+v-add-domain tiri tickets.devil-works.com
+
+# Verificar que se creó
+ls -la /home/tiri/web/tickets.devil-works.com/
 ```
 
-## Configuración SSL (HTTPS)
+---
 
-### Con Let's Encrypt
+## PASO 3: Instalar Docker
 
 ```bash
-# 1. Instala certbot
-apt install certbot -y
+# Instalar dependencias
+apt update
+apt install -y ca-certificates curl gnupg lsb-release
 
-# 2. Obtén certificado
-certbot certonly --standalone -d tudominio.com
+# Añadir repositorio Docker
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# 3. Actualiza nginx-ssl.conf
-sed -i 's/YOUR_DOMAIN.com/tudominio.com/g' deploy/nginx-ssl.conf
+# Instalar Docker
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# 4. Usa config SSL
-cp deploy/nginx-ssl.conf deploy/nginx.conf
+# Verificar instalación
+docker --version
+docker compose version
 
-# 5. Reconstruye
-docker-compose -f deploy/docker-compose.yml up -d --build
+# Iniciar Docker
+systemctl enable docker
+systemctl start docker
 ```
+
+---
+
+## PASO 4: Clonar Proyecto desde Git
+
+```bash
+# Ir al directorio del dominio
+cd /home/tiri/web/tickets.devil-works.com
+
+# Crear directorio para Docker
+mkdir -p docker
+cd docker
+
+# Clonar repositorio (reemplaza con tu repo)
+git clone https://github.com/TU_USUARIO/TU_REPO.git .
+
+# O si ya tienes los archivos, súbelos con scp desde tu máquina local:
+# scp -r ./deploy/* root@82.223.44.155:/home/tiri/web/tickets.devil-works.com/docker/
+```
+
+---
+
+## PASO 5: Construir y Ejecutar Docker
+
+```bash
+cd /home/tiri/web/tickets.devil-works.com/docker
+
+# Construir imagen
+docker compose -f deploy/docker-compose.yml build
+
+# Ejecutar contenedor
+docker compose -f deploy/docker-compose.yml up -d
+
+# Verificar que está corriendo
+docker ps
+
+# Ver logs (para verificar que funciona)
+docker logs ticketzone-web
+```
+
+---
+
+## PASO 6: Configurar Nginx de Hestia como Proxy
+
+```bash
+# Editar configuración del dominio
+nano /etc/nginx/conf.d/domains/tickets.devil-works.com.conf
+```
+
+**Reemplazar TODO el contenido con:**
+
+```nginx
+server {
+    listen      82.223.44.155:80;
+    server_name tickets.devil-works.com;
+    
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+```bash
+# Verificar configuración
+nginx -t
+
+# Si dice "syntax is ok", reiniciar nginx
+systemctl restart nginx
+
+# Verificar que funciona
+curl http://localhost:3000
+curl http://tickets.devil-works.com
+```
+
+---
+
+## PASO 7: Configurar SSL con Let's Encrypt
+
+```bash
+# Usar Hestia para generar SSL
+v-add-letsencrypt-domain tiri tickets.devil-works.com
+
+# Esperar unos segundos y verificar
+v-list-web-domain tiri tickets.devil-works.com
+
+# Si el SSL no se aplica automáticamente, editar config SSL manualmente:
+nano /etc/nginx/conf.d/domains/tickets.devil-works.com.ssl.conf
+```
+
+**Contenido para el archivo SSL:**
+
+```nginx
+server {
+    listen      82.223.44.155:443 ssl http2;
+    server_name tickets.devil-works.com;
+
+    ssl_certificate     /home/tiri/conf/web/tickets.devil-works.com/ssl/tickets.devil-works.com.pem;
+    ssl_certificate_key /home/tiri/conf/web/tickets.devil-works.com/ssl/tickets.devil-works.com.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers off;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+```bash
+# Verificar y reiniciar
+nginx -t && systemctl restart nginx
+
+# Probar HTTPS
+curl https://tickets.devil-works.com
+```
+
+---
+
+## PASO 8: Crear Servicio Systemd (Auto-inicio)
+
+```bash
+# Crear archivo de servicio
+nano /etc/systemd/system/ticketzone.service
+```
+
+**Contenido:**
+
+```ini
+[Unit]
+Description=TicketZone Docker Container
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/tiri/web/tickets.devil-works.com/docker
+ExecStart=/usr/bin/docker compose -f deploy/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f deploy/docker-compose.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Habilitar servicio
+systemctl daemon-reload
+systemctl enable ticketzone
+systemctl start ticketzone
+
+# Verificar estado
+systemctl status ticketzone
+```
+
+---
 
 ## Comandos Útiles
 
 ```bash
-# Ver estado
+# Ver estado del contenedor
 docker ps
 
 # Ver logs en tiempo real
 docker logs -f ticketzone-web
 
 # Reiniciar aplicación
-docker-compose -f deploy/docker-compose.yml restart
+cd /home/tiri/web/tickets.devil-works.com/docker
+docker compose -f deploy/docker-compose.yml restart
 
-# Actualizar (después de cambios)
-docker-compose -f deploy/docker-compose.yml up -d --build
+# Actualizar después de cambios en el código
+cd /home/tiri/web/tickets.devil-works.com/docker
+git pull
+docker compose -f deploy/docker-compose.yml up -d --build
 
-# Detener
-docker-compose -f deploy/docker-compose.yml down
+# Detener todo
+docker compose -f deploy/docker-compose.yml down
 
-# Ver uso de recursos
-docker stats ticketzone-web
+# Reconstruir desde cero
+docker compose -f deploy/docker-compose.yml down
+docker system prune -af
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-## Estructura de Archivos
-
-```
-deploy/
-├── Dockerfile          # Imagen Docker
-├── docker-compose.yml  # Orquestación
-├── nginx.conf          # Config Nginx (HTTP)
-├── nginx-ssl.conf      # Config Nginx (HTTPS)
-├── install.sh          # Script instalación completa
-├── quick-deploy.sh     # Despliegue rápido
-└── DEPLOY.md           # Esta documentación
-```
+---
 
 ## Solución de Problemas
 
-### El contenedor no inicia
+### Error: "duplicate location"
+```bash
+# Ver archivos de config del dominio
+ls -la /etc/nginx/conf.d/domains/tickets.devil-works.com*
+
+# Asegúrate de que solo hay UN bloque location / en cada archivo
+# Elimina cualquier duplicado
+```
+
+### Error: SSL self-signed
+```bash
+# Regenerar SSL con Hestia
+v-delete-letsencrypt-domain tiri tickets.devil-works.com
+v-add-letsencrypt-domain tiri tickets.devil-works.com
+
+# Verificar que los certificados existen
+ls -la /home/tiri/conf/web/tickets.devil-works.com/ssl/
+```
+
+### Contenedor no arranca
 ```bash
 docker logs ticketzone-web
 ```
 
-### Puerto 80 ocupado
+### Puerto 3000 ocupado
 ```bash
-# Ver qué usa el puerto
-lsof -i :80
-# O cambiar puerto en docker-compose.yml
+lsof -i :3000
+# Matar proceso si es necesario
+kill -9 PID
 ```
 
-### Problemas de permisos
+### Nginx no arranca
 ```bash
-chmod +x deploy/*.sh
+# Ver error exacto
+nginx -t
+
+# Ver logs
+journalctl -xeu nginx.service --no-pager | tail -50
 ```
-
-### Reconstruir desde cero
-```bash
-docker-compose -f deploy/docker-compose.yml down
-docker system prune -af
-docker-compose -f deploy/docker-compose.yml up -d --build
-```
-
-## Actualizaciones
-
-```bash
-cd /opt/ticketzone
-# Actualiza archivos del proyecto
-docker-compose -f deploy/docker-compose.yml up -d --build
-```
-
-## Backups
-
-Los datos se almacenan en el navegador del usuario (localStorage).
-Para un sistema completo de backups, considera añadir una base de datos.
 
 ---
 
-## Instalación en Hestia Control Panel
+## Resumen de Rutas Importantes
 
-Si usas Hestia CP, hay un script específico que automatiza todo:
-
-```bash
-# 1. Sube el proyecto al servidor
-scp -r ./* usuario@tu-servidor:/tmp/ticketzone/
-
-# 2. Conecta al servidor
-ssh root@tu-servidor
-
-# 3. Ejecuta el instalador de Hestia
-cd /tmp/ticketzone
-chmod +x deploy/install-hestia.sh
-./deploy/install-hestia.sh
-```
-
-### ¿Qué hace el script de Hestia?
-
-1. ✅ Verifica que Hestia esté instalado
-2. ✅ Lista usuarios disponibles
-3. ✅ Crea el dominio en Hestia automáticamente
-4. ✅ Configura Nginx como proxy reverso
-5. ✅ Instala Docker si no existe
-6. ✅ Configura SSL con Let's Encrypt (opcional)
-7. ✅ Crea servicio systemd para inicio automático
-8. ✅ Genera script de gestión fácil de usar
-
-### Comandos de gestión (Hestia)
-
-```bash
-# Ver estado
-/home/USUARIO/web/DOMINIO/manage-ticketzone.sh status
-
-# Ver logs
-/home/USUARIO/web/DOMINIO/manage-ticketzone.sh logs
-
-# Reiniciar
-/home/USUARIO/web/DOMINIO/manage-ticketzone.sh restart
-
-# Actualizar
-/home/USUARIO/web/DOMINIO/manage-ticketzone.sh update
-```
+| Descripción | Ruta |
+|-------------|------|
+| Proyecto Docker | `/home/tiri/web/tickets.devil-works.com/docker/` |
+| Config Nginx HTTP | `/etc/nginx/conf.d/domains/tickets.devil-works.com.conf` |
+| Config Nginx HTTPS | `/etc/nginx/conf.d/domains/tickets.devil-works.com.ssl.conf` |
+| Certificados SSL | `/home/tiri/conf/web/tickets.devil-works.com/ssl/` |
+| Logs Docker | `docker logs ticketzone-web` |
+| Servicio Systemd | `/etc/systemd/system/ticketzone.service` |

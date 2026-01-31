@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Enable package exports for zod/v4 resolution (set early)
+ENV EXPO_USE_METRO_UNSTABLE_ENABLE_PACKAGE_EXPORTS=true
+
 # Install dependencies
 RUN npm install -g expo-cli
 
@@ -15,8 +18,13 @@ RUN npm install --legacy-peer-deps
 # Copy source code
 COPY . .
 
-# Build web version (enable package exports for zod/v4 resolution)
-ENV EXPO_USE_METRO_UNSTABLE_ENABLE_PACKAGE_EXPORTS=true
+# Create metro config for zod/v4 resolution
+RUN echo 'const { getDefaultConfig } = require("expo/metro-config");' > metro.config.js && \
+    echo 'const config = getDefaultConfig(__dirname);' >> metro.config.js && \
+    echo 'config.resolver.unstable_enablePackageExports = true;' >> metro.config.js && \
+    echo 'module.exports = config;' >> metro.config.js
+
+# Build web version
 RUN npx expo export -p web
 
 # Production stage with Nginx

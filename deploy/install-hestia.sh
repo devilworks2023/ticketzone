@@ -214,7 +214,8 @@ setup_app_directory() {
     mkdir -p "$DOCKER_DIR"
     
     # Copiar TODO el proyecto primero
-    cp -r "$PROJECT_DIR"/* "$DOCKER_DIR/" 2>/dev/null || true
+    log_info "Copiando archivos del proyecto..."
+    cp -r "$PROJECT_DIR"/* "$DOCKER_DIR/" || log_warning "Algunos archivos no se copiaron"
     cp -r "$PROJECT_DIR"/.[!.]* "$DOCKER_DIR/" 2>/dev/null || true
     
     # Eliminar carpetas innecesarias
@@ -223,23 +224,35 @@ setup_app_directory() {
     rm -rf "$DOCKER_DIR/deploy" 2>/dev/null || true
     
     # Copiar Dockerfile al directorio docker (CRITICO)
-    cp -f "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
+    log_info "Copiando Dockerfile desde $DEPLOY_DIR a $DOCKER_DIR"
+    cp -fv "$DEPLOY_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile" || {
+        log_error "FALLO al copiar Dockerfile"
+        log_info "Origen: $DEPLOY_DIR/Dockerfile"
+        ls -la "$DEPLOY_DIR/" 2>&1 || echo "No se puede listar $DEPLOY_DIR"
+        exit 1
+    }
     
-    # Verificar que Dockerfile existe
+    # Verificar que Dockerfile existe y tiene contenido
     if [ ! -f "$DOCKER_DIR/Dockerfile" ]; then
-        log_error "FALLO: Dockerfile no se copio correctamente"
-        log_info "Contenido de $DEPLOY_DIR:"
-        ls -la "$DEPLOY_DIR/"
+        log_error "Dockerfile no existe en $DOCKER_DIR"
         exit 1
     fi
     
-    # Verificar archivos criticos
-    log_info "Verificando archivos en $DOCKER_DIR:"
-    ls -la "$DOCKER_DIR/Dockerfile" "$DOCKER_DIR/package.json" 2>&1 || {
-        log_error "Faltan archivos criticos"
-        ls -la "$DOCKER_DIR/"
+    if [ ! -s "$DOCKER_DIR/Dockerfile" ]; then
+        log_error "Dockerfile esta vacio"
         exit 1
-    }
+    fi
+    
+    log_success "Dockerfile copiado ($(wc -l < "$DOCKER_DIR/Dockerfile") lineas)"
+    
+    # Verificar archivos criticos
+    log_info "Contenido del directorio $DOCKER_DIR:"
+    ls -la "$DOCKER_DIR/" | head -20
+    
+    if [ ! -f "$DOCKER_DIR/package.json" ]; then
+        log_error "package.json no encontrado en $DOCKER_DIR"
+        exit 1
+    fi
     
     log_success "Archivos copiados correctamente"
     chown -R $HESTIA_USER:$HESTIA_USER "$APP_DIR"
@@ -430,7 +443,47 @@ start_docker_app() {
     log_step "Construyendo e iniciando aplicacion..."
     
     DOCKER_DIR="/home/$HESTIA_USER/web/$DOMAIN/docker"
-    cd $DOCKER_DIR
+    
+    # Verificar que estamos en el directorio correcto
+    if [ ! -d "$DOCKER_DIR" ]; then
+        log_error "Directorio no existe: $DOCKER_DIR"
+        exit 1
+    fi
+    
+    cd "$DOCKER_DIR" || { log_error "No se puede acceder a $DOCKER_DIR"; exit 1; }
+    
+    # VERIFICACION CRITICA: Dockerfile debe existir
+    log_info "Verificando archivos en $(pwd):"
+    ls -la
+    
+    if [ ! -f "Dockerfile" ]; then
+        log_error "Dockerfile NO encontrado en $DOCKER_DIR"
+        log_info "Intentando copiar desde proyecto original..."
+        
+        # Buscar Dockerfile en ubicaciones conocidas
+        if [ -f "/tmp/ticketzone/deploy/Dockerfile" ]; then
+            cp -f "/tmp/ticketzone/deploy/Dockerfile" "./Dockerfile"
+            log_success "Dockerfile copiado desde /tmp/ticketzone/deploy/"
+        elif [ -f "$SCRIPT_DIR/Dockerfile" ]; then
+            cp -f "$SCRIPT_DIR/Dockerfile" "./Dockerfile"
+            log_success "Dockerfile copiado desde $SCRIPT_DIR"
+        else
+            log_error "No se encuentra Dockerfile en ninguna ubicacion"
+            exit 1
+        fi
+    fi
+    
+    if [ ! -f "docker-compose.hestia.yml" ]; then
+        log_error "docker-compose.hestia.yml NO encontrado"
+        exit 1
+    fi
+    
+    if [ ! -f "package.json" ]; then
+        log_error "package.json NO encontrado"
+        exit 1
+    fi
+    
+    log_success "Todos los archivos verificados"
     
     if command -v docker-compose &>/dev/null; then
         docker-compose -f docker-compose.hestia.yml build --no-cache

@@ -9,8 +9,8 @@ RUN npm install -g expo-cli
 # Copy package files
 COPY package.json bun.lock ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (--legacy-peer-deps for React 19 compatibility)
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .

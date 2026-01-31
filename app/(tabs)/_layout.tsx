@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Calendar, Users, ScanLine, LogOut } from "lucide-react-native";
+import { LayoutDashboard, Calendar, Users, ScanLine, LogOut, Building2 } from "lucide-react-native";
 import React from "react";
 import { Platform, TouchableOpacity, Alert } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
@@ -71,6 +71,13 @@ export default function TabLayout() {
         options={{
           title: "Vendedores",
           tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="promoters"
+        options={{
+          title: "Promotores",
+          tabBarIcon: ({ color, size }) => <Building2 color={color} size={size} />,
         }}
       />
       <Tabs.Screen

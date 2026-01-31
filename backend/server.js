@@ -437,7 +437,11 @@ const promotersRouter = createTRPCRouter({
   list: publicProcedure.query(({ ctx }) => {
     const promoters = ctx.db.prepare(`
       SELECT p.*, (SELECT COUNT(*) FROM events WHERE promoter_id = p.id) as event_count,
-        (SELECT COALESCE(SUM(t.promoter_amount), 0) FROM tickets t JOIN events e ON t.event_id = e.id WHERE e.promoter_id = p.id) as total_earnings
+        (SELECT COALESCE(SUM(t.promoter_amount), 0) FROM tickets t JOIN events e ON t.event_id = e.id WHERE e.promoter_id = p.id) as total_earnings,
+        (SELECT COALESCE(SUM(t.promoter_amount), 0) FROM tickets t JOIN events e ON t.event_id = e.id 
+          WHERE e.promoter_id = p.id AND t.purchase_date > COALESCE(
+            (SELECT MAX(completed_at) FROM promoter_payouts WHERE promoter_id = p.id AND status = 'completed'), '1970-01-01'
+          )) as pending_payout
       FROM promoters p ORDER BY p.created_at DESC
     `).all();
     return promoters.map(p => ({
@@ -446,7 +450,41 @@ const promotersRouter = createTRPCRouter({
       stripeAccountId: p.stripe_account_id, stripeAccountStatus: p.stripe_account_status,
       commissionPercentage: p.commission_percentage, isActive: Boolean(p.is_active),
       createdAt: p.created_at, eventCount: p.event_count, totalEarnings: p.total_earnings,
+      pendingPayout: p.pending_payout || 0,
     }));
+  }),
+
+  getById: publicProcedure.input(z.object({ id: z.string() })).query(({ ctx, input }) => {
+    const promoter = ctx.db.prepare(`
+      SELECT p.*, (SELECT COUNT(*) FROM events WHERE promoter_id = p.id) as event_count,
+        (SELECT COALESCE(SUM(t.promoter_amount), 0) FROM tickets t JOIN events e ON t.event_id = e.id WHERE e.promoter_id = p.id) as total_earnings
+      FROM promoters p WHERE p.id = ?
+    `).get(input.id);
+    if (!promoter) return null;
+
+    const events = ctx.db.prepare(`
+      SELECT e.*, (SELECT COUNT(*) FROM tickets WHERE event_id = e.id) as tickets_sold,
+        (SELECT COALESCE(SUM(price), 0) FROM tickets WHERE event_id = e.id) as revenue
+      FROM events e WHERE e.promoter_id = ? ORDER BY e.date DESC
+    `).all(input.id);
+
+    const payouts = ctx.db.prepare('SELECT * FROM promoter_payouts WHERE promoter_id = ? ORDER BY created_at DESC LIMIT 20').all(input.id);
+
+    return {
+      id: promoter.id, name: promoter.name, email: promoter.email, phone: promoter.phone,
+      companyName: promoter.company_name, taxId: promoter.tax_id,
+      stripeAccountId: promoter.stripe_account_id, stripeAccountStatus: promoter.stripe_account_status,
+      commissionPercentage: promoter.commission_percentage, isActive: Boolean(promoter.is_active),
+      createdAt: promoter.created_at, eventCount: promoter.event_count, totalEarnings: promoter.total_earnings,
+      events: events.map(e => ({
+        id: e.id, name: e.name, date: e.date, venue: e.venue,
+        ticketsSold: e.tickets_sold, revenue: e.revenue, isActive: Boolean(e.is_active),
+      })),
+      payouts: payouts.map(p => ({
+        id: p.id, amount: p.amount, status: p.status,
+        stripeTransferId: p.stripe_transfer_id, createdAt: p.created_at, completedAt: p.completed_at,
+      })),
+    };
   }),
 
   create: publicProcedure.input(z.object({
@@ -466,11 +504,169 @@ const promotersRouter = createTRPCRouter({
     return { id: promoterId, success: true };
   }),
 
+  update: publicProcedure.input(z.object({
+    id: z.string(), name: z.string().optional(), email: z.string().email().optional(),
+    phone: z.string().optional(), companyName: z.string().optional(), taxId: z.string().optional(),
+    commissionPercentage: z.number().min(0).max(100).optional(), isActive: z.boolean().optional(),
+  })).mutation(({ ctx, input }) => {
+    const { id, ...updates } = input;
+    const fields = []; const values = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.email !== undefined) { fields.push('email = ?'); values.push(updates.email); }
+    if (updates.phone !== undefined) { fields.push('phone = ?'); values.push(updates.phone); }
+    if (updates.companyName !== undefined) { fields.push('company_name = ?'); values.push(updates.companyName); }
+    if (updates.taxId !== undefined) { fields.push('tax_id = ?'); values.push(updates.taxId); }
+    if (updates.commissionPercentage !== undefined) { fields.push('commission_percentage = ?'); values.push(updates.commissionPercentage); }
+    if (updates.isActive !== undefined) { fields.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+    if (fields.length > 0) {
+      fields.push('updated_at = CURRENT_TIMESTAMP'); values.push(id);
+      ctx.db.prepare(`UPDATE promoters SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+    return { success: true };
+  }),
+
+  connectStripe: publicProcedure.input(z.object({
+    id: z.string(), stripeAccountId: z.string(),
+  })).mutation(({ ctx, input }) => {
+    ctx.db.prepare(`UPDATE promoters SET stripe_account_id = ?, stripe_account_status = 'active', updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .run(input.stripeAccountId, input.id);
+    return { success: true };
+  }),
+
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
     const hasEvents = ctx.db.prepare('SELECT COUNT(*) as count FROM events WHERE promoter_id = ?').get(input.id);
     if (hasEvents.count > 0) throw new Error('No se puede eliminar un promotor con eventos asociados');
     ctx.db.prepare('DELETE FROM promoters WHERE id = ?').run(input.id);
     return { success: true };
+  }),
+});
+
+const paymentsRouter = createTRPCRouter({
+  createPaymentIntent: publicProcedure.input(z.object({
+    eventId: z.string(),
+    tierId: z.string(),
+    quantity: z.number().min(1),
+    buyerName: z.string(),
+    buyerEmail: z.string(),
+    buyerPhone: z.string().optional(),
+    sellerCode: z.string().optional(),
+  })).mutation(({ ctx, input }) => {
+    const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
+    if (!tier) throw new Error('Tipo de entrada no encontrado');
+    if (tier.sold + input.quantity > tier.quantity) throw new Error('No hay suficientes entradas disponibles');
+
+    const event = ctx.db.prepare(`SELECT e.*, p.stripe_account_id, p.commission_percentage
+      FROM events e LEFT JOIN promoters p ON e.promoter_id = p.id WHERE e.id = ?`).get(input.eventId);
+    if (!event) throw new Error('Evento no encontrado');
+
+    const totalAmount = tier.price * input.quantity;
+    const platformCommission = event.commission_percentage || 5;
+    const platformFee = totalAmount * (platformCommission / 100);
+    const promoterAmount = totalAmount - platformFee;
+
+    const paymentIntentId = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    return {
+      paymentIntentId,
+      clientSecret: `${paymentIntentId}_secret_${Math.random().toString(36).substr(2, 16)}`,
+      amount: Math.round(totalAmount * 100),
+      currency: 'eur',
+      platformFee: Math.round(platformFee * 100),
+      promoterAmount: Math.round(promoterAmount * 100),
+      stripeAccountId: event.stripe_account_id,
+      metadata: {
+        eventId: input.eventId,
+        tierId: input.tierId,
+        quantity: input.quantity,
+        buyerName: input.buyerName,
+        buyerEmail: input.buyerEmail,
+        sellerCode: input.sellerCode || null,
+      },
+    };
+  }),
+
+  confirmPayment: publicProcedure.input(z.object({
+    paymentIntentId: z.string(),
+    eventId: z.string(),
+    tierId: z.string(),
+    quantity: z.number().min(1),
+    buyerName: z.string(),
+    buyerEmail: z.string(),
+    buyerPhone: z.string().optional(),
+    sellerCode: z.string().optional(),
+  })).mutation(({ ctx, input }) => {
+    const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
+    if (!tier) throw new Error('Tipo de entrada no encontrado');
+
+    const tickets = [];
+    let seller = null;
+    let sellerCommission = 0;
+
+    if (input.sellerCode) {
+      seller = ctx.db.prepare('SELECT * FROM sellers WHERE code = ? AND is_active = 1').get(input.sellerCode.toUpperCase());
+      if (seller) {
+        const commissions = ctx.db.prepare('SELECT * FROM seller_commissions WHERE seller_id = ? ORDER BY min_sales ASC').all(seller.id);
+        for (const comm of commissions) {
+          if (seller.total_sales >= comm.min_sales && (comm.max_sales === null || seller.total_sales < comm.max_sales)) {
+            sellerCommission = tier.price * (comm.percentage / 100);
+            break;
+          }
+        }
+      }
+    }
+
+    const platformCommission = ctx.db.prepare("SELECT value FROM settings WHERE key = 'platform_commission'").get();
+    const platformFee = tier.price * ((parseFloat(platformCommission?.value || '5') / 100));
+    const promoterAmount = tier.price - platformFee - sellerCommission;
+
+    for (let i = 0; i < input.quantity; i++) {
+      const ticketId = `tkt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const qrCode = `${input.eventId}-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+      ctx.db.prepare(`INSERT INTO tickets (id, event_id, tier_id, buyer_name, buyer_email, buyer_phone,
+        qr_code, seller_id, seller_code, payment_method, payment_intent_id, price, platform_fee, promoter_amount, seller_commission)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        ticketId, input.eventId, input.tierId, input.buyerName, input.buyerEmail,
+        input.buyerPhone || null, qrCode, seller?.id || null,
+        input.sellerCode?.toUpperCase() || null, 'card', input.paymentIntentId,
+        tier.price, platformFee, promoterAmount, sellerCommission
+      );
+
+      tickets.push({ id: ticketId, qrCode, price: tier.price });
+    }
+
+    ctx.db.prepare('UPDATE ticket_tiers SET sold = sold + ? WHERE id = ?').run(input.quantity, input.tierId);
+
+    if (seller) {
+      ctx.db.prepare('UPDATE sellers SET total_sales = total_sales + ?, total_revenue = total_revenue + ? WHERE id = ?')
+        .run(input.quantity, tier.price * input.quantity, seller.id);
+    }
+
+    return { success: true, tickets, total: tier.price * input.quantity };
+  }),
+
+  getPromoterPayouts: publicProcedure.input(z.object({ promoterId: z.string() })).query(({ ctx, input }) => {
+    const payouts = ctx.db.prepare('SELECT * FROM promoter_payouts WHERE promoter_id = ? ORDER BY created_at DESC').all(input.promoterId);
+    return payouts.map(p => ({
+      id: p.id, amount: p.amount, status: p.status,
+      stripeTransferId: p.stripe_transfer_id, createdAt: p.created_at, completedAt: p.completed_at,
+    }));
+  }),
+
+  createPayout: publicProcedure.input(z.object({
+    promoterId: z.string(), amount: z.number().min(1),
+  })).mutation(({ ctx, input }) => {
+    const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId);
+    if (!promoter) throw new Error('Promotor no encontrado');
+    if (!promoter.stripe_account_id || promoter.stripe_account_status !== 'active') {
+      throw new Error('El promotor no tiene una cuenta de Stripe activa');
+    }
+
+    const payoutId = `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    ctx.db.prepare(`INSERT INTO promoter_payouts (id, promoter_id, amount, status) VALUES (?, ?, ?, 'processing')`)
+      .run(payoutId, input.promoterId, input.amount);
+
+    return { id: payoutId, success: true };
   }),
 });
 
@@ -524,6 +720,7 @@ const appRouter = createTRPCRouter({
   tickets: ticketsRouter,
   sellers: sellersRouter,
   promoters: promotersRouter,
+  payments: paymentsRouter,
   stats: statsRouter,
   settings: settingsRouter,
 });

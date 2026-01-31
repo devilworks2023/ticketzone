@@ -195,36 +195,27 @@ setup_app_directory() {
     log_info "Copiando a: $DOCKER_DIR"
     
     if [ -f "$SCRIPT_DIR/Dockerfile" ]; then
-        # Usar rsync si está disponible (más confiable)
-        if command -v rsync &>/dev/null; then
-            rsync -av --exclude='.git' --exclude='node_modules' "$PROJECT_DIR/" "$DOCKER_DIR/"
-        else
-            # Copiar todo el proyecto
-            cd "$PROJECT_DIR"
-            for item in *; do
-                if [ "$item" != "node_modules" ] && [ "$item" != ".git" ]; then
-                    cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-                fi
-            done
-            # Copiar archivos ocultos excepto .git
-            for item in .[!.]*; do
-                if [ "$item" != ".git" ] && [ -e "$item" ]; then
-                    cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
-                fi
-            done
-        fi
+        # Copiar archivos del proyecto (excepto node_modules y .git)
+        cd "$PROJECT_DIR"
+        for item in *; do
+            if [ "$item" != "node_modules" ] && [ "$item" != ".git" ] && [ "$item" != "deploy" ]; then
+                cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
+            fi
+        done
         
-        # Verificar que deploy existe
-        if [ ! -d "$DOCKER_DIR/deploy" ]; then
-            log_warning "Creando directorio deploy manualmente..."
-            mkdir -p "$DOCKER_DIR/deploy"
-            cp -f "$SCRIPT_DIR"/* "$DOCKER_DIR/deploy/"
-        fi
+        # Copiar archivos ocultos excepto .git
+        for item in .[!.]*; do
+            if [ "$item" != ".git" ] && [ -e "$item" ]; then
+                cp -r "$item" "$DOCKER_DIR/" 2>/dev/null || true
+            fi
+        done
+        
+        # Copiar Dockerfile al directorio raiz
+        cp -f "$SCRIPT_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile"
         
         # Verificar archivos criticos
-        if [ -f "$DOCKER_DIR/deploy/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
+        if [ -f "$DOCKER_DIR/Dockerfile" ] && [ -f "$DOCKER_DIR/package.json" ]; then
             log_success "Archivos copiados a $DOCKER_DIR"
-            ls -la "$DOCKER_DIR/deploy/" | head -5
         else
             log_error "Faltan archivos criticos. Contenido de $DOCKER_DIR:"
             ls -la "$DOCKER_DIR/"
@@ -388,7 +379,7 @@ services:
   ticketzone:
     build:
       context: .
-      dockerfile: ./deploy/Dockerfile
+      dockerfile: Dockerfile
     container_name: ticketzone-$HESTIA_USER
     restart: unless-stopped
     ports:

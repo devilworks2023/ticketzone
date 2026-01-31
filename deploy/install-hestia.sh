@@ -274,21 +274,43 @@ setup_app_directory() {
 create_hestia_domain() {
     log_step "Creando dominio en Hestia..."
     
-    # Check if domain exists
+    WEB_FOLDER="/home/$HESTIA_USER/web/$DOMAIN"
+    
+    # Check if domain exists in Hestia
     if $HESTIA_DIR/bin/v-list-web-domain $HESTIA_USER $DOMAIN &>/dev/null; then
-        log_warning "El dominio '$DOMAIN' ya existe"
+        log_warning "El dominio '$DOMAIN' ya existe en Hestia"
         read -p "¿Deseas reconfigurarlo? (s/n): " RECONFIG
         if [[ "$RECONFIG" =~ ^[Ss]$ ]]; then
             $HESTIA_DIR/bin/v-delete-web-domain $HESTIA_USER $DOMAIN
             log_info "Dominio eliminado, recreando..."
+            sleep 2
         else
             log_info "Usando dominio existente"
             return
         fi
     fi
     
+    # Check if folder exists but domain doesn't (orphan folder)
+    if [ -d "$WEB_FOLDER" ]; then
+        log_warning "La carpeta $WEB_FOLDER existe pero el dominio no esta en Hestia"
+        log_info "Eliminando carpeta huerfana..."
+        rm -rf "$WEB_FOLDER"
+        sleep 1
+        log_success "Carpeta eliminada"
+    fi
+    
     # Create domain
-    $HESTIA_DIR/bin/v-add-web-domain $HESTIA_USER $DOMAIN
+    $HESTIA_DIR/bin/v-add-web-domain $HESTIA_USER $DOMAIN || {
+        log_error "Error al crear dominio. Verificando..."
+        # Intentar limpiar y reintentar
+        rm -rf "$WEB_FOLDER" 2>/dev/null || true
+        rm -rf "/home/$HESTIA_USER/conf/web/$DOMAIN" 2>/dev/null || true
+        sleep 2
+        $HESTIA_DIR/bin/v-add-web-domain $HESTIA_USER $DOMAIN || {
+            log_error "No se pudo crear el dominio despues de limpiar"
+            exit 1
+        }
+    }
     log_success "Dominio '$DOMAIN' creado en Hestia"
 }
 

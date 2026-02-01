@@ -189,8 +189,8 @@ function initializeDatabase(db: Database.Database) {
     db.prepare(`
       INSERT INTO users (id, email, password_hash, name, role, is_active)
       VALUES (?, ?, ?, ?, ?, 1)
-    `).run('admin-1', 'admin@ticketzone.com', passwordHash, 'Administrador', 'admin');
-    console.log('Default admin user created: admin@ticketzone.com / admin123');
+    `).run('admin-1', 'devilworks2023@gmail.com', passwordHash, 'Administrador', 'admin');
+    console.log('Default admin user created: devilworks2023@gmail.com / admin123');
   }
 }
 

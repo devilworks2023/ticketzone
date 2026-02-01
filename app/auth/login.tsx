@@ -136,7 +136,7 @@ export default function LoginScreen() {
 
           <View style={styles.demoCredentials}>
             <Text style={styles.demoTitle}>Credenciales de administrador:</Text>
-            <Text style={styles.demoText}>Email: admin@ticketzone.com</Text>
+            <Text style={styles.demoText}>Email: devilworks2023@gmail.com</Text>
             <Text style={styles.demoText}>Contraseña: admin123</Text>
           </View>
         </View>

@@ -206,6 +206,44 @@ function initializeDatabase(db: Database.Database) {
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
+    -- Invitaciones para personal de escaneo de entradas
+    CREATE TABLE IF NOT EXISTS scanner_invitations (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      promoter_id TEXT NOT NULL,
+      event_id TEXT,
+      max_uses INTEGER DEFAULT 1,
+      current_uses INTEGER DEFAULT 0,
+      expires_at TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id),
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    );
+
+    -- Usuarios escáner (personal de verificación de entradas)
+    CREATE TABLE IF NOT EXISTS scanner_users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      promoter_id TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id)
+    );
+
+    -- Relación escáner-eventos (a qué eventos tiene acceso cada escáner)
+    CREATE TABLE IF NOT EXISTS scanner_event_access (
+      id TEXT PRIMARY KEY,
+      scanner_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (scanner_id) REFERENCES scanner_users(id) ON DELETE CASCADE,
+      FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+      UNIQUE(scanner_id, event_id)
+    );
+
     -- Índices para mejor rendimiento
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_qr ON tickets(qr_code);
@@ -214,6 +252,9 @@ function initializeDatabase(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
     CREATE INDEX IF NOT EXISTS idx_promoter_subscriptions_promoter ON promoter_subscriptions(promoter_id);
     CREATE INDEX IF NOT EXISTS idx_invitation_codes_code ON invitation_codes(code);
+    CREATE INDEX IF NOT EXISTS idx_scanner_invitations_code ON scanner_invitations(code);
+    CREATE INDEX IF NOT EXISTS idx_scanner_users_promoter ON scanner_users(promoter_id);
+    CREATE INDEX IF NOT EXISTS idx_scanner_event_access_scanner ON scanner_event_access(scanner_id);
   `);
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };

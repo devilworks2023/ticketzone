@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, Calendar, Ticket, DollarSign, ChevronRight, CreditCard, AlertCircle, CheckCircle, Clock, Building2, Crown } from 'lucide-react-native';
+import { TrendingUp, Calendar, Ticket, DollarSign, ChevronRight, CreditCard, AlertCircle, CheckCircle, Clock, Building2, Crown, Users, ScanLine } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -271,6 +271,24 @@ export default function PromoterDashboard() {
             >
               <Crown color={Colors.dark.warning} size={24} />
               <Text style={styles.actionText}>Mi Suscripción</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.actionsGrid, { marginTop: 12 }]}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/promoter/scanners' as any)}
+            >
+              <Users color={Colors.dark.secondary} size={24} />
+              <Text style={styles.actionText}>Personal Escaneo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/(tabs)/scanner' as any)}
+            >
+              <ScanLine color={Colors.dark.accent} size={24} />
+              <Text style={styles.actionText}>Escanear Entradas</Text>
             </TouchableOpacity>
           </View>
         </View>

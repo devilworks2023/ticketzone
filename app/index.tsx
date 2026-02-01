@@ -25,6 +25,7 @@ import {
   ArrowLeft,
   UserPlus,
   Key,
+  ScanLine,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
@@ -339,6 +340,27 @@ export default function PublicEventsScreen() {
 
               <Text style={styles.registerHint}>
                 El registro profesional requiere un código de invitación del administrador
+              </Text>
+            </View>
+
+            <View style={styles.scannerAccessSection}>
+              <View style={styles.registerDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>¿Eres personal de escaneo?</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={styles.scannerAccessButton}
+                onPress={() => router.push('/scanner/access')}
+                activeOpacity={0.8}
+              >
+                <ScanLine color={Colors.dark.accent} size={20} />
+                <Text style={styles.scannerAccessButtonText}>Acceso Escáner</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.registerHint}>
+                Accede con tu código de invitación para escanear entradas en eventos
               </Text>
             </View>
           </View>
@@ -689,6 +711,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.dark.textMuted,
     marginTop: 12,
+  },
+  scannerAccessSection: {
+    marginTop: 24,
+  },
+  scannerAccessButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.dark.accent + '15',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent + '40',
+  },
+  scannerAccessButtonText: {
+    color: Colors.dark.accent,
+    fontSize: 14,
+    fontWeight: '600',
   },
   emailBadge: {
     backgroundColor: Colors.dark.surface,

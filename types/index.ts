@@ -86,7 +86,7 @@ export interface PaymentMethod {
   enabled: boolean;
 }
 
-export type UserRole = 'buyer' | 'seller' | 'admin';
+export type UserRole = 'buyer' | 'seller' | 'admin' | 'promoter' | 'scanner';
 
 export interface User {
   id: string;
@@ -97,6 +97,31 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   sellerId?: string;
+  promoterId?: string;
+}
+
+export interface ScannerInvitation {
+  id: string;
+  code: string;
+  promoterId: string;
+  promoterName?: string;
+  eventId?: string;
+  eventName?: string;
+  maxUses: number;
+  currentUses: number;
+  expiresAt?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ScannerUser {
+  id: string;
+  name: string;
+  email: string;
+  promoterId: string;
+  eventIds: string[];
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface AuthState {

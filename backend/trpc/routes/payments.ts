@@ -109,9 +109,8 @@ export const paymentsRouter = createTRPCRouter({
           }
         }
 
-        const platformCommission = ctx.db.prepare("SELECT value FROM settings WHERE key = 'platform_commission'").get() as any;
-        const platformFee = tier.price * ((parseFloat(platformCommission?.value || '5') / 100));
-        const promoterAmount = tier.price - platformFee - sellerCommission;
+        const platformFee = 0;
+        const promoterAmount = tier.price - sellerCommission;
 
         const tickets = [];
 

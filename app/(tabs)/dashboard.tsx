@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, Ticket, Euro, Clock, ChevronRight, Zap } from 'lucide-react-native';
+import { TrendingUp, Ticket, Euro, Clock, ChevronRight, CreditCard, Package } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -65,13 +65,16 @@ export default function DashboardScreen() {
             <Text style={styles.statLabelSmall}>Entradas vendidas</Text>
           </View>
 
-          <View style={[styles.statCard, styles.statCardSmall]}>
+          <TouchableOpacity 
+            style={[styles.statCard, styles.statCardSmall]}
+            onPress={() => router.push('/admin/subscriptions')}
+          >
             <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + '20' }]}>
-              <Zap color={Colors.dark.success} size={20} />
+              <CreditCard color={Colors.dark.success} size={20} />
             </View>
-            <Text style={styles.statValueSmall}>{formatCurrency(stats.platformEarnings)}</Text>
-            <Text style={styles.statLabelSmall}>Comisiones plataforma</Text>
-          </View>
+            <Text style={styles.statValueSmall}>Suscripciones</Text>
+            <Text style={styles.statLabelSmall}>Gestionar planes</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statRow}>

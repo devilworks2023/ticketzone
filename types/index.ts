@@ -135,3 +135,27 @@ export interface DashboardStats {
   totalSellers: number;
   totalPromoters: number;
 }
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  description?: string;
+  maxEventsPerMonth: number;
+  priceMonthly: number;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface PromoterSubscription {
+  id: string;
+  promoterId: string;
+  planId: string;
+  planName: string;
+  maxEventsPerMonth: number;
+  priceMonthly: number;
+  status: 'active' | 'cancelled' | 'expired';
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  eventsUsedThisMonth: number;
+  stripeSubscriptionId?: string;
+}

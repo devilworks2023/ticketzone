@@ -163,23 +163,66 @@ function initializeDatabase(db: Database.Database) {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Planes de suscripción
+    CREATE TABLE IF NOT EXISTS subscription_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      max_events_per_month INTEGER NOT NULL,
+      price_monthly REAL NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Suscripciones de promotores
+    CREATE TABLE IF NOT EXISTS promoter_subscriptions (
+      id TEXT PRIMARY KEY,
+      promoter_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      current_period_start TEXT NOT NULL,
+      current_period_end TEXT NOT NULL,
+      events_used_this_month INTEGER DEFAULT 0,
+      stripe_subscription_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id),
+      FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+    );
+
     -- Índices para mejor rendimiento
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_qr ON tickets(qr_code);
     CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_id);
     CREATE INDEX IF NOT EXISTS idx_events_promoter ON events(promoter_id);
     CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
+    CREATE INDEX IF NOT EXISTS idx_promoter_subscriptions_promoter ON promoter_subscriptions(promoter_id);
   `);
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };
   if (settingsCount.count === 0) {
     const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
     insertSetting.run('platform_name', 'TicketZone');
-    insertSetting.run('platform_commission', '5.0');
+    insertSetting.run('platform_commission', '0');
     insertSetting.run('currency', 'EUR');
     insertSetting.run('stripe_enabled', 'true');
   } else {
     db.prepare("UPDATE settings SET value = 'true' WHERE key = 'stripe_enabled'").run();
+    db.prepare("UPDATE settings SET value = '0' WHERE key = 'platform_commission'").run();
+  }
+
+  const plansCount = db.prepare('SELECT COUNT(*) as count FROM subscription_plans').get() as { count: number };
+  if (plansCount.count === 0) {
+    const insertPlan = db.prepare(`
+      INSERT INTO subscription_plans (id, name, description, max_events_per_month, price_monthly, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    insertPlan.run('plan_starter', 'Starter', 'Ideal para empezar con pocos eventos', 3, 29.99, 1);
+    insertPlan.run('plan_pro', 'Profesional', 'Para promotores con actividad regular', 10, 79.99, 2);
+    insertPlan.run('plan_enterprise', 'Enterprise', 'Eventos ilimitados para grandes promotores', 999, 199.99, 3);
+    console.log('Default subscription plans created');
   }
 
   const adminCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };

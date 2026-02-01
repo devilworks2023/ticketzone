@@ -175,8 +175,8 @@ export default function PublicEventsScreen() {
             <View style={styles.logoContainer}>
               <Ticket color={Colors.dark.primary} size={28} />
             </View>
-            <Text style={styles.brandTitle}>TicketPro</Text>
-            <Text style={styles.brandSubtitle}>Entradas sin comisiones</Text>
+            <Text style={styles.brandTitle}>TicketZone</Text>
+            <Text style={styles.brandSubtitle}>Tu plataforma de eventos</Text>
           </View>
         </LinearGradient>
 

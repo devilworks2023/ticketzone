@@ -4,17 +4,11 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
-import { Platform } from "react-native";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { trpc, trpcClient } from "@/lib/trpc";
 import Colors from "@/constants/colors";
-
-let StripeProvider: any = ({ children }: { children: React.ReactNode }) => children;
-if (Platform.OS !== 'web') {
-  const stripe = require('@stripe/stripe-react-native');
-  StripeProvider = stripe.StripeProvider;
-}
+import { StripeProvider } from "@/lib/stripe-native";
 
 SplashScreen.preventAutoHideAsync();
 

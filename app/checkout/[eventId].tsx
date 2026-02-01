@@ -7,15 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
-
-let useStripe: any = () => ({ initPaymentSheet: async () => ({}), presentPaymentSheet: async () => ({}) });
-let useConfirmPayment: any = () => ({ confirmPayment: async () => ({}) });
-
-if (Platform.OS !== 'web') {
-  const stripe = require('@stripe/stripe-react-native');
-  useStripe = stripe.useStripe;
-  useConfirmPayment = stripe.useConfirmPayment;
-}
+import { useStripe } from '@/lib/stripe-native';
 
 interface PaymentData {
   eventId: string;

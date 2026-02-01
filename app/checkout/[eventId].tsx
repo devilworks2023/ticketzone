@@ -77,7 +77,7 @@ export default function CheckoutScreen() {
 
       if (Platform.OS !== 'web') {
         const { error } = await initPaymentSheet({
-          paymentIntentClientSecret: result.clientSecret,
+          paymentIntentClientSecret: result.clientSecret ?? undefined,
           merchantDisplayName: 'TicketZone',
           allowsDelayedPaymentMethods: false,
           defaultBillingDetails: {

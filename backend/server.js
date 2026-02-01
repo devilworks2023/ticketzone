@@ -1536,6 +1536,9 @@ app.get('/health', (c) => c.json({ status: 'healthy', timestamp: new Date().toIS
 
 const port = parseInt(process.env.PORT || '3001', 10);
 
+// Inicializar base de datos al arrancar (para mostrar logs)
+getDatabase();
+
 console.log('╔═══════════════════════════════════════════╗');
 console.log('║     TicketZone Backend Server             ║');
 console.log('╚═══════════════════════════════════════════╝');

@@ -1,3 +1,10 @@
+export interface TicketExtra {
+  id: string;
+  name: string;
+  price: number;
+  description?: string;
+}
+
 export interface TicketTier {
   id: string;
   name: string;
@@ -7,6 +14,7 @@ export interface TicketTier {
   description: string;
   includesBus?: boolean;
   isVip?: boolean;
+  extras?: TicketExtra[];
 }
 
 export interface Event {

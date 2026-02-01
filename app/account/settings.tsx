@@ -177,29 +177,38 @@ export default function AccountSettingsScreen() {
     }
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro que deseas salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Salir',
-          style: 'destructive',
-          onPress: async () => {
-            console.log('Logging out from settings...');
-            try {
-              await logout();
-              console.log('Logout successful, navigating...');
-              router.replace('/');
-            } catch (error) {
-              console.log('Logout error:', error);
-              router.replace('/');
-            }
+  const handleLogout = async () => {
+    const doLogout = async () => {
+      console.log('Logging out from settings...');
+      try {
+        await logout();
+        console.log('Logout successful, navigating...');
+        router.replace('/');
+      } catch (error) {
+        console.log('Logout error:', error);
+        router.replace('/');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('¿Estás seguro que deseas salir?');
+      if (confirmed) {
+        await doLogout();
+      }
+    } else {
+      Alert.alert(
+        'Cerrar Sesión',
+        '¿Estás seguro que deseas salir?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Salir',
+            style: 'destructive',
+            onPress: doLogout,
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const getStripeStatusBadge = () => {

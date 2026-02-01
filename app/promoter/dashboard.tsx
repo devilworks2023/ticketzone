@@ -5,6 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, Calendar, Ticket, DollarSign, ChevronRight, CreditCard, AlertCircle, CheckCircle, Clock, Building2, Crown } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { trpc } from '@/lib/trpc';
 
 interface PromoterStats {
   totalEarnings: number;
@@ -26,58 +28,42 @@ interface PromoterEvent {
 
 export default function PromoterDashboard() {
   const router = useRouter();
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [stats] = useState<PromoterStats>({
-    totalEarnings: 4850.00,
-    pendingPayout: 1250.00,
-    totalEvents: 5,
-    totalTicketsSold: 342,
+  
+  const promotersQuery = trpc.promoters.list.useQuery();
+  
+  const currentPromoter = promotersQuery.data?.find(
+    p => p.email.toLowerCase() === user?.email?.toLowerCase()
+  );
+  
+  const [stats, setStats] = useState<PromoterStats>({
+    totalEarnings: 0,
+    pendingPayout: 0,
+    totalEvents: 0,
+    totalTicketsSold: 0,
     stripeConnected: false,
   });
-  const [events] = useState<PromoterEvent[]>([
-    {
-      id: '1',
-      name: 'Summer Festival 2026',
-      date: '2026-07-15',
-      venue: 'Playa del Sol',
-      ticketsSold: 156,
-      revenue: 2340.00,
-      isActive: true,
-    },
-    {
-      id: '2',
-      name: 'Noche Latina',
-      date: '2026-06-20',
-      venue: 'Club Tropicana',
-      ticketsSold: 89,
-      revenue: 1335.00,
-      isActive: true,
-    },
-    {
-      id: '3',
-      name: 'Electronic Night',
-      date: '2026-05-10',
-      venue: 'Warehouse 51',
-      ticketsSold: 97,
-      revenue: 1175.00,
-      isActive: false,
-    },
-  ]);
+  
+  const [events] = useState<PromoterEvent[]>([]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentPromoter) {
+      setStats({
+        totalEarnings: currentPromoter.totalEarnings || 0,
+        pendingPayout: currentPromoter.pendingPayout || 0,
+        totalEvents: currentPromoter.eventCount || 0,
+        totalTicketsSold: 0,
+        stripeConnected: currentPromoter.stripeAccountStatus === 'active',
+      });
+    }
+  }, [currentPromoter]);
 
-  const loadData = async () => {
-    setLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    setLoading(false);
-  };
+  const loading = promotersQuery.isLoading;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await promotersQuery.refetch();
     setRefreshing(false);
   };
 
@@ -125,10 +111,17 @@ export default function PromoterDashboard() {
           </View>
         </View>
 
-        {!stats.stripeConnected && (
+        {!stats.stripeConnected && currentPromoter && (
           <TouchableOpacity 
             style={styles.stripeAlert}
-            onPress={() => router.push('/promoter/connect-stripe')}
+            onPress={() => router.push({
+              pathname: '/promoter/connect-stripe',
+              params: {
+                promoterId: currentPromoter.id,
+                email: currentPromoter.email,
+                name: currentPromoter.name,
+              },
+            })}
           >
             <LinearGradient
               colors={[Colors.dark.warning + '20', Colors.dark.warning + '10']}

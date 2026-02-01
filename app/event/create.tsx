@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { Plus, Trash2, Crown, Bus, Image as ImageIcon } from 'lucide-react-native';
+import { Plus, Trash2, Crown, Bus, Image as ImageIcon, Gift, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
-import { TicketTier } from '@/types';
+import { TicketTier, TicketExtra } from '@/types';
 
 const defaultImages = [
   'https://images.unsplash.com/photo-1571266028243-e4733b0f0bb0?w=800',
@@ -26,14 +26,39 @@ export default function CreateEventScreen() {
   const [description, setDescription] = useState('');
   const [selectedImage, setSelectedImage] = useState(defaultImages[0]);
   const [ticketTiers, setTicketTiers] = useState<Omit<TicketTier, 'id' | 'sold'>[]>([
-    { name: 'General', price: 20, quantity: 100, description: 'Entrada general', isVip: false, includesBus: false },
+    { name: 'General', price: 20, quantity: 100, description: 'Entrada general', isVip: false, includesBus: false, extras: [] },
   ]);
 
   const addTier = () => {
     setTicketTiers([
       ...ticketTiers,
-      { name: '', price: 0, quantity: 50, description: '', isVip: false, includesBus: false },
+      { name: '', price: 0, quantity: 50, description: '', isVip: false, includesBus: false, extras: [] },
     ]);
+  };
+
+  const addExtra = (tierIndex: number) => {
+    const updated = [...ticketTiers];
+    const extras = updated[tierIndex].extras || [];
+    updated[tierIndex].extras = [
+      ...extras,
+      { id: `extra-${Date.now()}`, name: '', price: 0, description: '' },
+    ];
+    setTicketTiers(updated);
+  };
+
+  const updateExtra = (tierIndex: number, extraIndex: number, updates: Partial<TicketExtra>) => {
+    const updated = [...ticketTiers];
+    const extras = updated[tierIndex].extras || [];
+    extras[extraIndex] = { ...extras[extraIndex], ...updates };
+    updated[tierIndex].extras = extras;
+    setTicketTiers(updated);
+  };
+
+  const removeExtra = (tierIndex: number, extraIndex: number) => {
+    const updated = [...ticketTiers];
+    const extras = updated[tierIndex].extras || [];
+    updated[tierIndex].extras = extras.filter((_, i) => i !== extraIndex);
+    setTicketTiers(updated);
   };
 
   const updateTier = (index: number, updates: Partial<typeof ticketTiers[0]>) => {
@@ -276,6 +301,45 @@ export default function CreateEventScreen() {
                 <Text style={[styles.optionText, tier.includesBus && styles.optionTextActive]}>+ Bus</Text>
               </TouchableOpacity>
             </View>
+
+            <View style={styles.extrasSection}>
+              <View style={styles.extrasHeader}>
+                <Text style={styles.extrasTitle}>Extras opcionales</Text>
+                <TouchableOpacity style={styles.addExtraButton} onPress={() => addExtra(index)}>
+                  <Plus color={Colors.dark.secondary} size={14} />
+                  <Text style={styles.addExtraText}>Añadir</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {(tier.extras || []).map((extra, extraIndex) => (
+                <View key={extra.id || extraIndex} style={styles.extraCard}>
+                  <View style={styles.extraHeader}>
+                    <Gift color={Colors.dark.secondary} size={14} />
+                    <Text style={styles.extraLabel}>Extra {extraIndex + 1}</Text>
+                    <TouchableOpacity onPress={() => removeExtra(index, extraIndex)}>
+                      <X color={Colors.dark.error} size={16} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.extraInputs}>
+                    <TextInput
+                      style={[styles.input, styles.extraInput]}
+                      placeholder="Nombre (ej: Consumición)"
+                      placeholderTextColor={Colors.dark.textMuted}
+                      value={extra.name}
+                      onChangeText={(text) => updateExtra(index, extraIndex, { name: text })}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.extraPriceInput]}
+                      placeholder="€"
+                      placeholderTextColor={Colors.dark.textMuted}
+                      value={extra.price > 0 ? extra.price.toString() : ''}
+                      onChangeText={(text) => updateExtra(index, extraIndex, { price: parseFloat(text) || 0 })}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
         ))}
 
@@ -420,5 +484,65 @@ const styles = StyleSheet.create({
   },
   optionTextActive: {
     color: Colors.dark.text,
+  },
+  extrasSection: {
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  extrasHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  extrasTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.dark.textSecondary,
+  },
+  addExtraButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addExtraText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.dark.secondary,
+  },
+  extraCard: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  extraHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  extraLabel: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.dark.secondary,
+  },
+  extraInputs: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  extraInput: {
+    flex: 1,
+    padding: 10,
+    fontSize: 14,
+  },
+  extraPriceInput: {
+    width: 70,
+    padding: 10,
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

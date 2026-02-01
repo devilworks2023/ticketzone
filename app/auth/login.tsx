@@ -135,10 +135,9 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.demoCredentials}>
-            <Text style={styles.demoTitle}>Credenciales de prueba:</Text>
-            <Text style={styles.demoText}>Admin: admin@ticketera.com</Text>
-            <Text style={styles.demoText}>Vendedor: vendedor@ticketera.com</Text>
-            <Text style={styles.demoText}>Contraseña: 123456</Text>
+            <Text style={styles.demoTitle}>Credenciales de administrador:</Text>
+            <Text style={styles.demoText}>Email: admin@ticketzone.com</Text>
+            <Text style={styles.demoText}>Contraseña: admin123</Text>
           </View>
         </View>
       </KeyboardAvoidingView>

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback } from 'react';
 import { User, UserRole } from '@/types';
+import { trpc } from '@/lib/trpc';
 
 const STORAGE_KEYS = {
   USER: 'ticketera_user',
@@ -69,22 +70,34 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     await AsyncStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(newUsers));
   };
 
+  const loginMutation = trpc.auth.login.useMutation();
+
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
-    const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
-    
-    if (!foundUser) {
-      return { success: false, message: 'Usuario no encontrado o inactivo' };
+    try {
+      const result = await loginMutation.mutateAsync({ email, password });
+      
+      if (result.success && result.user) {
+        const loggedUser: User = {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: result.user.role as UserRole,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        };
+        
+        setUser(loggedUser);
+        await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(loggedUser));
+        
+        return { success: true, message: 'Inicio de sesión exitoso' };
+      }
+      
+      return { success: false, message: 'Error al iniciar sesión' };
+    } catch (error: any) {
+      console.log('Login error:', error);
+      return { success: false, message: error.message || 'Error al iniciar sesión' };
     }
-
-    if (password !== '123456') {
-      return { success: false, message: 'Contraseña incorrecta' };
-    }
-
-    setUser(foundUser);
-    await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(foundUser));
-    
-    return { success: true, message: 'Inicio de sesión exitoso' };
-  }, [users]);
+  }, [loginMutation]);
 
   const logout = useCallback(async () => {
     setUser(null);

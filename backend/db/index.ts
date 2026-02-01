@@ -177,7 +177,20 @@ function initializeDatabase(db: Database.Database) {
     insertSetting.run('platform_name', 'TicketZone');
     insertSetting.run('platform_commission', '5.0');
     insertSetting.run('currency', 'EUR');
-    insertSetting.run('stripe_enabled', 'false');
+    insertSetting.run('stripe_enabled', 'true');
+  } else {
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'stripe_enabled'").run();
+  }
+
+  const adminCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+  if (adminCount.count === 0) {
+    const crypto = require('crypto');
+    const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, name, role, is_active)
+      VALUES (?, ?, ?, ?, ?, 1)
+    `).run('admin-1', 'admin@ticketzone.com', passwordHash, 'Administrador', 'admin');
+    console.log('Default admin user created: admin@ticketzone.com / admin123');
   }
 }
 

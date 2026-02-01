@@ -133,4 +133,64 @@ export const authRouter = createTRPCRouter({
       ctx.db.prepare('DELETE FROM users WHERE id = ?').run(input.id);
       return { success: true };
     }),
+
+  getProfile: publicProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(({ ctx, input }) => {
+      const user = ctx.db.prepare(`
+        SELECT id, email, name, role, is_active, created_at FROM users WHERE id = ?
+      `).get(input.userId) as any;
+
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        isActive: user.is_active === 1,
+        createdAt: user.created_at,
+      };
+    }),
+
+  updateProfile: publicProcedure
+    .input(z.object({
+      userId: z.string(),
+      name: z.string().optional(),
+      phone: z.string().optional(),
+      currentPassword: z.string().optional(),
+      newPassword: z.string().min(6).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.db.prepare('SELECT * FROM users WHERE id = ?').get(input.userId) as any;
+      if (!user) throw new Error('Usuario no encontrado');
+
+      if (input.newPassword) {
+        if (!input.currentPassword) {
+          throw new Error('Debes proporcionar la contraseña actual');
+        }
+        if (!verifyPassword(input.currentPassword, user.password_hash)) {
+          throw new Error('Contraseña actual incorrecta');
+        }
+      }
+
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      if (input.name !== undefined) {
+        updates.push('name = ?');
+        values.push(input.name);
+      }
+      if (input.newPassword) {
+        updates.push('password_hash = ?');
+        values.push(hashPassword(input.newPassword));
+      }
+
+      if (updates.length > 0) {
+        values.push(input.userId);
+        ctx.db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      }
+
+      return { success: true };
+    }),
 });

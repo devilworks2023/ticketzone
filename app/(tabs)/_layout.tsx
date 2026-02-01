@@ -1,29 +1,12 @@
 import { Tabs, router } from "expo-router";
-import { LayoutDashboard, Calendar, Users, ScanLine, LogOut, Building2 } from "lucide-react-native";
+import { LayoutDashboard, Calendar, Users, ScanLine, Settings, Building2 } from "lucide-react-native";
 import React from "react";
-import { Platform, TouchableOpacity, Alert } from "react-native";
-import { useAuth } from "@/contexts/AuthContext";
+import { Platform, TouchableOpacity } from "react-native";
 import Colors from "@/constants/colors";
 
 export default function TabLayout() {
-  const { logout } = useAuth();
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro que deseas salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Salir', 
-          style: 'destructive', 
-          onPress: async () => {
-            await logout();
-            router.replace('/');
-          }
-        },
-      ]
-    );
+  const handleOpenSettings = () => {
+    router.push('/account/settings');
   };
 
   return (
@@ -51,10 +34,10 @@ export default function TabLayout() {
         },
         headerRight: () => (
           <TouchableOpacity 
-            onPress={handleLogout}
+            onPress={handleOpenSettings}
             style={{ marginRight: 16, padding: 8 }}
           >
-            <LogOut color={Colors.dark.textMuted} size={20} />
+            <Settings color={Colors.dark.textMuted} size={20} />
           </TouchableOpacity>
         ),
       }}

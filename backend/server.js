@@ -855,7 +855,6 @@ function generateVerificationCode() {
 }
 
 function hashPassword(password) {
-  const crypto = require('crypto');
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
@@ -939,18 +938,30 @@ const authRouter = createTRPCRouter({
       password: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
+      console.log('[LOGIN] Intento de login para:', input.email.toLowerCase());
+      
       const user = ctx.db.prepare(`
         SELECT * FROM users WHERE email = ? AND is_active = 1
       `).get(input.email.toLowerCase());
 
       if (!user) {
+        console.log('[LOGIN] Usuario no encontrado o inactivo');
         throw new Error('Usuario no encontrado o inactivo');
       }
 
+      console.log('[LOGIN] Usuario encontrado:', user.email, '| Rol:', user.role);
+      
+      const inputHash = hashPassword(input.password);
+      console.log('[LOGIN] Hash entrada:', inputHash.substring(0, 20) + '...');
+      console.log('[LOGIN] Hash guardado:', user.password_hash.substring(0, 20) + '...');
+      console.log('[LOGIN] ¿Coinciden?:', inputHash === user.password_hash);
+
       if (!verifyPassword(input.password, user.password_hash)) {
+        console.log('[LOGIN] Contraseña incorrecta');
         throw new Error('Contraseña incorrecta');
       }
 
+      console.log('[LOGIN] Login exitoso para:', user.email);
       return {
         success: true,
         user: {

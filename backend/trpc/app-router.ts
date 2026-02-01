@@ -5,6 +5,7 @@ import { sellersRouter } from './routes/sellers';
 import { promotersRouter } from './routes/promoters';
 import { statsRouter } from './routes/stats';
 import { settingsRouter } from './routes/settings';
+import { paymentsRouter } from './routes/payments';
 
 export const appRouter = createTRPCRouter({
   events: eventsRouter,
@@ -13,6 +14,7 @@ export const appRouter = createTRPCRouter({
   promoters: promotersRouter,
   stats: statsRouter,
   settings: settingsRouter,
+  payments: paymentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

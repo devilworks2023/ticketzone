@@ -1,11 +1,21 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CreditCard, Lock, CheckCircle, AlertCircle, ChevronLeft } from 'lucide-react-native';
+import { Lock, CheckCircle, AlertCircle, ChevronLeft, CreditCard } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
+
+let useStripe: any = () => ({ initPaymentSheet: async () => ({}), presentPaymentSheet: async () => ({}) });
+let useConfirmPayment: any = () => ({ confirmPayment: async () => ({}) });
+
+if (Platform.OS !== 'web') {
+  const stripe = require('@stripe/stripe-react-native');
+  useStripe = stripe.useStripe;
+  useConfirmPayment = stripe.useConfirmPayment;
+}
 
 interface PaymentData {
   eventId: string;
@@ -24,13 +34,12 @@ interface PaymentData {
 export default function CheckoutScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   
-  const [step, setStep] = useState<'card' | 'processing' | 'success' | 'error'>('card');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiry, setExpiry] = useState('');
-  const [cvc, setCvc] = useState('');
-  const [cardName, setCardName] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [step, setStep] = useState<'loading' | 'ready' | 'processing' | 'success' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [purchasedTickets, setPurchasedTickets] = useState<any[]>([]);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
 
   const paymentData: PaymentData = {
     eventId: params.eventId as string,
@@ -46,64 +55,121 @@ export default function CheckoutScreen() {
     sellerCode: params.sellerCode as string,
   };
 
+  const createPaymentIntent = trpc.payments.createPaymentIntent.useMutation();
+  const confirmPayment = trpc.payments.confirmPayment.useMutation();
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
   };
 
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    const chunks = cleaned.match(/.{1,4}/g);
-    return chunks ? chunks.join(' ').substring(0, 19) : '';
-  };
+  useEffect(() => {
+    initializePayment();
+  }, []);
 
-  const formatExpiry = (text: string) => {
-    const cleaned = text.replace(/\D/g, '');
-    if (cleaned.length >= 2) {
-      return `${cleaned.substring(0, 2)}/${cleaned.substring(2, 4)}`;
-    }
-    return cleaned;
-  };
+  const initializePayment = async () => {
+    try {
+      console.log('Initializing payment with data:', paymentData);
+      
+      const result = await createPaymentIntent.mutateAsync({
+        eventId: paymentData.eventId,
+        tierId: paymentData.tierId,
+        quantity: paymentData.quantity,
+        buyerName: paymentData.buyerName,
+        buyerEmail: paymentData.buyerEmail,
+        buyerPhone: paymentData.buyerPhone,
+        sellerCode: paymentData.sellerCode,
+      });
 
-  const validateCard = () => {
-    const cleanCardNumber = cardNumber.replace(/\s/g, '');
-    if (cleanCardNumber.length < 16) {
-      Alert.alert('Error', 'Número de tarjeta inválido');
-      return false;
+      console.log('Payment intent created:', result.paymentIntentId);
+      setPaymentIntentId(result.paymentIntentId);
+
+      if (Platform.OS !== 'web') {
+        const { error } = await initPaymentSheet({
+          paymentIntentClientSecret: result.clientSecret,
+          merchantDisplayName: 'TicketZone',
+          allowsDelayedPaymentMethods: false,
+          defaultBillingDetails: {
+            name: paymentData.buyerName,
+            email: paymentData.buyerEmail,
+          },
+        });
+
+        if (error) {
+          console.error('Error initializing payment sheet:', error);
+          setErrorMessage(error.message);
+          setStep('error');
+          return;
+        }
+      }
+
+      setStep('ready');
+    } catch (error: any) {
+      console.error('Error creating payment intent:', error);
+      setErrorMessage(error.message || 'Error al preparar el pago');
+      setStep('error');
     }
-    if (expiry.length < 5) {
-      Alert.alert('Error', 'Fecha de expiración inválida');
-      return false;
-    }
-    if (cvc.length < 3) {
-      Alert.alert('Error', 'CVC inválido');
-      return false;
-    }
-    if (!cardName.trim()) {
-      Alert.alert('Error', 'Nombre del titular requerido');
-      return false;
-    }
-    return true;
   };
 
   const handlePayment = async () => {
-    if (!validateCard()) return;
+    if (Platform.OS === 'web') {
+      Alert.alert('Info', 'Para realizar pagos con tarjeta, por favor usa la app móvil.');
+      return;
+    }
 
-    setIsProcessing(true);
     setStep('processing');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      const { error } = await presentPaymentSheet();
 
+      if (error) {
+        console.error('Payment sheet error:', error);
+        if (error.code === 'Canceled') {
+          setStep('ready');
+          return;
+        }
+        setErrorMessage(error.message);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setStep('error');
+        return;
+      }
+
+      console.log('Payment successful, confirming...');
+
+      const result = await confirmPayment.mutateAsync({
+        paymentIntentId: paymentIntentId!,
+        eventId: paymentData.eventId,
+        tierId: paymentData.tierId,
+        quantity: paymentData.quantity,
+        buyerName: paymentData.buyerName,
+        buyerEmail: paymentData.buyerEmail,
+        buyerPhone: paymentData.buyerPhone,
+        sellerCode: paymentData.sellerCode,
+      });
+
+      console.log('Tickets created:', result.tickets);
+      setPurchasedTickets(result.tickets);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStep('success');
-    } catch (error) {
-      console.log('Payment error:', error);
+    } catch (error: any) {
+      console.error('Payment confirmation error:', error);
+      setErrorMessage(error.message || 'Error al procesar el pago');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setStep('error');
-    } finally {
-      setIsProcessing(false);
     }
   };
+
+  if (step === 'loading') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.processingContainer}>
+          <ActivityIndicator size="large" color={Colors.dark.primary} />
+          <Text style={styles.processingTitle}>Preparando pago...</Text>
+          <Text style={styles.processingText}>Conectando con Stripe</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (step === 'processing') {
     return (
@@ -115,7 +181,7 @@ export default function CheckoutScreen() {
           <Text style={styles.processingText}>No cierres esta pantalla</Text>
           <View style={styles.secureNote}>
             <Lock color={Colors.dark.success} size={16} />
-            <Text style={styles.secureText}>Conexión segura con encriptación SSL</Text>
+            <Text style={styles.secureText}>Pago seguro con Stripe</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -154,6 +220,12 @@ export default function CheckoutScreen() {
               <Text style={styles.successDetailLabel}>Comprador</Text>
               <Text style={styles.successDetailValue}>{paymentData.buyerName}</Text>
             </View>
+            {purchasedTickets.length > 0 && (
+              <View style={styles.successDetailRow}>
+                <Text style={styles.successDetailLabel}>Códigos QR</Text>
+                <Text style={styles.successDetailValue}>{purchasedTickets.length} generados</Text>
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -182,14 +254,18 @@ export default function CheckoutScreen() {
           <View style={styles.errorIconWrapper}>
             <AlertCircle color={Colors.dark.error} size={60} />
           </View>
-          <Text style={styles.errorTitle}>Pago fallido</Text>
+          <Text style={styles.errorTitle}>Error en el pago</Text>
           <Text style={styles.errorText}>
-            No se pudo procesar el pago. Por favor, verifica los datos de tu tarjeta e inténtalo de nuevo.
+            {errorMessage || 'No se pudo procesar el pago. Por favor, inténtalo de nuevo.'}
           </Text>
           
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => setStep('card')}
+            onPress={() => {
+              setStep('loading');
+              setErrorMessage('');
+              initializePayment();
+            }}
           >
             <Text style={styles.retryButtonText}>Intentar de nuevo</Text>
           </TouchableOpacity>
@@ -234,70 +310,41 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        <View style={styles.cardSection}>
-          <Text style={styles.sectionTitle}>Datos de la tarjeta</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Número de tarjeta</Text>
-            <View style={styles.cardInputWrapper}>
-              <CreditCard color={Colors.dark.textMuted} size={20} />
-              <TextInput
-                style={styles.cardInput}
-                placeholder="1234 5678 9012 3456"
-                placeholderTextColor={Colors.dark.textMuted}
-                value={cardNumber}
-                onChangeText={(text) => setCardNumber(formatCardNumber(text))}
-                keyboardType="numeric"
-                maxLength={19}
-              />
+        <View style={styles.buyerInfo}>
+          <Text style={styles.sectionTitle}>Datos del comprador</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Nombre</Text>
+              <Text style={styles.infoValue}>{paymentData.buyerName}</Text>
             </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Email</Text>
+              <Text style={styles.infoValue}>{paymentData.buyerEmail}</Text>
+            </View>
+            {paymentData.buyerPhone && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Teléfono</Text>
+                <Text style={styles.infoValue}>{paymentData.buyerPhone}</Text>
+              </View>
+            )}
           </View>
+        </View>
 
-          <View style={styles.rowInputs}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.label}>Expiración</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="MM/YY"
-                placeholderTextColor={Colors.dark.textMuted}
-                value={expiry}
-                onChangeText={(text) => setExpiry(formatExpiry(text))}
-                keyboardType="numeric"
-                maxLength={5}
-              />
+        <View style={styles.paymentMethod}>
+          <Text style={styles.sectionTitle}>Método de pago</Text>
+          <View style={styles.methodCard}>
+            <CreditCard color={Colors.dark.primary} size={24} />
+            <View style={styles.methodInfo}>
+              <Text style={styles.methodTitle}>Tarjeta de crédito/débito</Text>
+              <Text style={styles.methodDesc}>Pago seguro con Stripe</Text>
             </View>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.label}>CVC</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="123"
-                placeholderTextColor={Colors.dark.textMuted}
-                value={cvc}
-                onChangeText={setCvc}
-                keyboardType="numeric"
-                maxLength={4}
-                secureTextEntry
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Nombre del titular</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Como aparece en la tarjeta"
-              placeholderTextColor={Colors.dark.textMuted}
-              value={cardName}
-              onChangeText={setCardName}
-              autoCapitalize="characters"
-            />
           </View>
         </View>
 
         <View style={styles.securityInfo}>
           <Lock color={Colors.dark.success} size={16} />
           <Text style={styles.securityText}>
-            Tu pago está protegido con encriptación SSL de 256 bits
+            Tu pago está protegido con la seguridad de Stripe
           </Text>
         </View>
 
@@ -308,7 +355,7 @@ export default function CheckoutScreen() {
         <TouchableOpacity
           style={styles.payButton}
           onPress={handlePayment}
-          disabled={isProcessing}
+          disabled={createPaymentIntent.isPending || confirmPayment.isPending}
         >
           <LinearGradient
             colors={Colors.dark.gradient.primary as [string, string]}
@@ -399,53 +446,59 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.dark.primary,
   },
-  cardSection: {
-    padding: 20,
-    paddingTop: 0,
+  buyerInfo: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: Colors.dark.text,
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.dark.textSecondary,
-    marginBottom: 8,
-  },
-  input: {
+  infoCard: {
     backgroundColor: Colors.dark.card,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    fontSize: 16,
-    color: Colors.dark.text,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
   },
-  cardInputWrapper: {
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.dark.text,
+  },
+  paymentMethod: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  methodCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.dark.card,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    gap: 12,
+    borderRadius: 16,
+    padding: 16,
+    gap: 16,
   },
-  cardInput: {
+  methodInfo: {
     flex: 1,
-    paddingVertical: 16,
-    fontSize: 16,
+  },
+  methodTitle: {
+    fontSize: 15,
+    fontWeight: '600',
     color: Colors.dark.text,
   },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 12,
+  methodDesc: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
   },
   securityInfo: {
     flexDirection: 'row',

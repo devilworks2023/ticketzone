@@ -4,10 +4,17 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
+import { Platform } from "react-native";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { trpc, trpcClient } from "@/lib/trpc";
 import Colors from "@/constants/colors";
+
+let StripeProvider: any = ({ children }: { children: React.ReactNode }) => children;
+if (Platform.OS !== 'web') {
+  const stripe = require('@stripe/stripe-react-native');
+  StripeProvider = stripe.StripeProvider;
+}
 
 SplashScreen.preventAutoHideAsync();
 
@@ -110,16 +117,20 @@ export default function RootLayout() {
     SplashScreen.hideAsync();
   }, []);
 
+  const stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <AppProvider>
-            <AuthProvider>
-              <StatusBar style="light" />
-              <RootLayoutNav />
-            </AuthProvider>
-          </AppProvider>
+          <StripeProvider publishableKey={stripePublishableKey}>
+            <AppProvider>
+              <AuthProvider>
+                <StatusBar style="light" />
+                <RootLayoutNav />
+              </AuthProvider>
+            </AppProvider>
+          </StripeProvider>
         </GestureHandlerRootView>
       </QueryClientProvider>
     </trpc.Provider>

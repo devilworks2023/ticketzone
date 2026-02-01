@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'ticketzone.db');
 
@@ -236,7 +237,6 @@ function initializeDatabase(db) {
 
   const adminCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ?').get('admin');
   if (adminCount.count === 0) {
-    const crypto = require('crypto');
     const adminId = 'user_admin_' + Date.now();
     const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
     db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')

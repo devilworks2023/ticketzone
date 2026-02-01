@@ -175,4 +175,92 @@ export const paymentsRouter = createTRPCRouter({
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
     };
   }),
+
+  createConnectAccount: publicProcedure
+    .input(z.object({
+      promoterId: z.string(),
+      email: z.string().email(),
+      businessName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          email: input.email,
+          business_profile: {
+            name: input.businessName,
+          },
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+        });
+
+        ctx.db.prepare(`
+          UPDATE promoters SET stripe_account_id = ?, stripe_account_status = 'pending', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(account.id, input.promoterId);
+
+        return {
+          accountId: account.id,
+          success: true,
+        };
+      } catch (error: any) {
+        console.error('Stripe Connect error:', error);
+        throw new Error(`Error al crear cuenta de Stripe: ${error.message}`);
+      }
+    }),
+
+  createConnectOnboardingLink: publicProcedure
+    .input(z.object({
+      accountId: z.string(),
+      returnUrl: z.string(),
+      refreshUrl: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      try {
+        const accountLink = await stripe.accountLinks.create({
+          account: input.accountId,
+          refresh_url: input.refreshUrl,
+          return_url: input.returnUrl,
+          type: 'account_onboarding',
+        });
+
+        return {
+          url: accountLink.url,
+          success: true,
+        };
+      } catch (error: any) {
+        console.error('Stripe onboarding link error:', error);
+        throw new Error(`Error al crear enlace de onboarding: ${error.message}`);
+      }
+    }),
+
+  checkConnectAccountStatus: publicProcedure
+    .input(z.object({
+      accountId: z.string(),
+      promoterId: z.string(),
+    }))
+    .query(async ({ ctx, input }) => {
+      try {
+        const account = await stripe.accounts.retrieve(input.accountId);
+        
+        const status = account.details_submitted ? 'active' : 'pending';
+        
+        ctx.db.prepare(`
+          UPDATE promoters SET stripe_account_status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(status, input.promoterId);
+
+        return {
+          status,
+          detailsSubmitted: account.details_submitted,
+          chargesEnabled: account.charges_enabled,
+          payoutsEnabled: account.payouts_enabled,
+        };
+      } catch (error: any) {
+        console.error('Check account status error:', error);
+        throw new Error(`Error al verificar estado de cuenta: ${error.message}`);
+      }
+    }),
 });

@@ -210,4 +210,34 @@ export const ticketsRouter = createTRPCRouter({
         price: ticket.price,
       };
     }),
+
+  getByEmail: publicProcedure
+    .input(z.object({ email: z.string() }))
+    .query(({ ctx, input }) => {
+      const tickets = ctx.db.prepare(`
+        SELECT t.*, e.name as event_name, e.date as event_date, e.time as event_time, e.venue, tt.name as tier_name
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        JOIN ticket_tiers tt ON t.tier_id = tt.id
+        WHERE LOWER(t.buyer_email) = LOWER(?)
+        ORDER BY t.purchase_date DESC
+      `).all(input.email) as any[];
+
+      return tickets.map(t => ({
+        id: t.id,
+        eventId: t.event_id,
+        eventName: t.event_name,
+        eventDate: t.event_date,
+        eventTime: t.event_time,
+        venue: t.venue,
+        tierName: t.tier_name,
+        buyerName: t.buyer_name,
+        buyerEmail: t.buyer_email,
+        qrCode: t.qr_code,
+        purchaseDate: t.purchase_date,
+        isUsed: Boolean(t.is_used),
+        usedAt: t.used_at,
+        price: t.price,
+      }));
+    }),
 });

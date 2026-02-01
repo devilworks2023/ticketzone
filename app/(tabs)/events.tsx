@@ -1,13 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { Plus, MapPin, Clock, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function EventsScreen() {
   const router = useRouter();
-  const { events } = useApp();
+  const eventsQuery = trpc.events.list.useQuery();
+  const events = eventsQuery.data || [];
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
@@ -101,17 +102,24 @@ export default function EventsScreen() {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🎉</Text>
-            <Text style={styles.emptyTitle}>Sin eventos</Text>
-            <Text style={styles.emptyText}>Crea tu primer evento para empezar a vender entradas</Text>
-            <TouchableOpacity 
-              style={styles.emptyButton}
-              onPress={() => router.push('/event/create')}
-            >
-              <Text style={styles.emptyButtonText}>Crear Evento</Text>
-            </TouchableOpacity>
-          </View>
+          eventsQuery.isLoading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color={Colors.dark.primary} />
+              <Text style={styles.loadingText}>Cargando eventos...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>🎉</Text>
+              <Text style={styles.emptyTitle}>Sin eventos</Text>
+              <Text style={styles.emptyText}>Crea tu primer evento para empezar a vender entradas</Text>
+              <TouchableOpacity 
+                style={styles.emptyButton}
+                onPress={() => router.push('/event/create')}
+              >
+                <Text style={styles.emptyButtonText}>Crear Evento</Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
       />
     </View>
@@ -267,5 +275,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFF',
+  },
+  loadingState: {
+    alignItems: 'center' as const,
+    paddingTop: 60,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
   },
 });

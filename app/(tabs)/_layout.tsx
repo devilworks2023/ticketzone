@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { LayoutDashboard, Calendar, Users, ScanLine, LogOut, Building2 } from "lucide-react-native";
 import React from "react";
 import { Platform, TouchableOpacity, Alert } from "react-native";
@@ -14,7 +14,14 @@ export default function TabLayout() {
       '¿Estás seguro que deseas salir?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Salir', style: 'destructive', onPress: logout },
+        { 
+          text: 'Salir', 
+          style: 'destructive', 
+          onPress: async () => {
+            await logout();
+            router.replace('/');
+          }
+        },
       ]
     );
   };

@@ -1,15 +1,16 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Plus, User, TrendingUp, Copy, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function SellersScreen() {
   const router = useRouter();
-  const { sellers } = useApp();
+  const sellersQuery = trpc.sellers.list.useQuery();
+  const sellers = sellersQuery.data || [];
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
@@ -97,7 +98,7 @@ export default function SellersScreen() {
           <View style={styles.header}>
             <View>
               <Text style={styles.headerTitle}>Vendedores</Text>
-              <Text style={styles.headerSubtitle}>{sellers.length} vendedores activos</Text>
+              <Text style={styles.headerSubtitle}>{sellers.filter(s => s.isActive).length} vendedores activos</Text>
             </View>
             <TouchableOpacity 
               style={styles.addButton}
@@ -108,17 +109,24 @@ export default function SellersScreen() {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyTitle}>Sin vendedores</Text>
-            <Text style={styles.emptyText}>Añade vendedores para que promocionen tus eventos</Text>
-            <TouchableOpacity 
-              style={styles.emptyButton}
-              onPress={() => router.push('/seller/create')}
-            >
-              <Text style={styles.emptyButtonText}>Añadir Vendedor</Text>
-            </TouchableOpacity>
-          </View>
+          sellersQuery.isLoading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color={Colors.dark.primary} />
+              <Text style={styles.loadingText}>Cargando vendedores...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>👥</Text>
+              <Text style={styles.emptyTitle}>Sin vendedores</Text>
+              <Text style={styles.emptyText}>Añade vendedores para que promocionen tus eventos</Text>
+              <TouchableOpacity 
+                style={styles.emptyButton}
+                onPress={() => router.push('/seller/create')}
+              >
+                <Text style={styles.emptyButtonText}>Añadir Vendedor</Text>
+              </TouchableOpacity>
+            </View>
+          )
         }
       />
     </View>
@@ -282,5 +290,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFF',
+  },
+  loadingState: {
+    alignItems: 'center' as const,
+    paddingTop: 60,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
   },
 });

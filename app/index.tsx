@@ -8,6 +8,7 @@ import {
   TextInput,
   Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -23,33 +24,38 @@ import {
   QrCode,
   ArrowLeft,
 } from 'lucide-react-native';
-import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function PublicEventsScreen() {
-  const { events, tickets } = useApp();
   const { buyerEmail, saveBuyerEmail, isAuthenticated } = useAuth();
+  
+  const eventsQuery = trpc.events.list.useQuery();
+  const ticketsQuery = trpc.tickets.getByEmail.useQuery(
+    { email: buyerEmail || '' },
+    { enabled: !!buyerEmail }
+  );
   const [email, setEmail] = useState(buyerEmail || '');
   const [showPurchases, setShowPurchases] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const events = eventsQuery.data || [];
   const activeEvents = events.filter(e => e.isActive);
   const filteredEvents = activeEvents.filter(e =>
     e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     e.venue.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const myTickets = tickets.filter(t => 
-    t.buyerEmail.toLowerCase() === email.toLowerCase()
-  );
+  const myTickets = ticketsQuery.data || [];
 
   const handleViewPurchases = () => {
     if (!email.trim()) {
       Alert.alert('Email requerido', 'Ingresa el email con el que compraste tus entradas');
       return;
     }
-    saveBuyerEmail(email.trim());
+    saveBuyerEmail(email.trim().toLowerCase());
+    ticketsQuery.refetch();
     setShowPurchases(true);
   };
 
@@ -65,9 +71,7 @@ export default function PublicEventsScreen() {
     }
   };
 
-  const getEventForTicket = (eventId: string) => {
-    return events.find(e => e.id === eventId);
-  };
+  
 
   if (showPurchases) {
     return (
@@ -89,7 +93,12 @@ export default function PublicEventsScreen() {
               <Text style={styles.emailBadgeText}>{email}</Text>
             </View>
 
-            {myTickets.length === 0 ? (
+            {ticketsQuery.isLoading ? (
+              <View style={styles.emptyState}>
+                <ActivityIndicator size="large" color={Colors.dark.primary} />
+                <Text style={styles.emptyTitle}>Buscando entradas...</Text>
+              </View>
+            ) : myTickets.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ticket color={Colors.dark.textMuted} size={64} />
                 <Text style={styles.emptyTitle}>No tienes entradas</Text>
@@ -99,9 +108,7 @@ export default function PublicEventsScreen() {
               </View>
             ) : (
               <View style={styles.ticketsList}>
-                {myTickets.map(ticket => {
-                  const event = getEventForTicket(ticket.eventId);
-                  return (
+                {myTickets.map(ticket => (
                     <View key={ticket.id} style={styles.ticketCard}>
                       <View style={styles.ticketHeader}>
                         <View style={[
@@ -121,20 +128,20 @@ export default function PublicEventsScreen() {
                       </View>
 
                       <Text style={styles.ticketEventName}>
-                        {event?.name || 'Evento'}
+                        {ticket.eventName || 'Evento'}
                       </Text>
 
                       <View style={styles.ticketDetails}>
                         <View style={styles.ticketDetailRow}>
                           <Calendar color={Colors.dark.textMuted} size={14} />
                           <Text style={styles.ticketDetailText}>
-                            {event?.date} - {event?.time}
+                            {ticket.eventDate} - {ticket.eventTime}
                           </Text>
                         </View>
                         <View style={styles.ticketDetailRow}>
                           <MapPin color={Colors.dark.textMuted} size={14} />
                           <Text style={styles.ticketDetailText}>
-                            {event?.venue}
+                            {ticket.venue}
                           </Text>
                         </View>
                       </View>
@@ -148,8 +155,7 @@ export default function PublicEventsScreen() {
                         <Text style={styles.ticketPrice}>{ticket.price.toFixed(2)}€</Text>
                       </View>
                     </View>
-                  );
-                })}
+                  ))}
               </View>
             )}
           </ScrollView>
@@ -210,7 +216,12 @@ export default function PublicEventsScreen() {
               />
             </View>
 
-            {filteredEvents.length === 0 ? (
+            {eventsQuery.isLoading ? (
+              <View style={styles.noEvents}>
+                <ActivityIndicator size="large" color={Colors.dark.primary} />
+                <Text style={styles.noEventsText}>Cargando eventos...</Text>
+              </View>
+            ) : filteredEvents.length === 0 ? (
               <View style={styles.noEvents}>
                 <Text style={styles.noEventsEmoji}>🎭</Text>
                 <Text style={styles.noEventsText}>No hay eventos disponibles</Text>

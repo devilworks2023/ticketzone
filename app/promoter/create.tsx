@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Building2, Mail, Phone, FileText, Percent, Save } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function CreatePromoterScreen() {
   const router = useRouter();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const createPromoterMutation = trpc.promoters.create.useMutation();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -47,10 +48,15 @@ export default function CreatePromoterScreen() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
-    setIsSubmitting(true);
-
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await createPromoterMutation.mutateAsync({
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        phone: formData.phone.trim() || undefined,
+        companyName: formData.companyName.trim() || undefined,
+        taxId: formData.taxId.trim() || undefined,
+        commissionPercentage: parseFloat(formData.commissionPercentage),
+      });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
@@ -58,10 +64,9 @@ export default function CreatePromoterScreen() {
         `${formData.name} ha sido añadido como promotor. Puede conectar su cuenta de Stripe para recibir pagos.`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
-    } catch {
-      Alert.alert('Error', 'No se pudo crear el promotor');
-    } finally {
-      setIsSubmitting(false);
+    } catch (error: any) {
+      console.log('Error creating promoter:', error);
+      Alert.alert('Error', error.message || 'No se pudo crear el promotor');
     }
   };
 
@@ -197,19 +202,23 @@ export default function CreatePromoterScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+          style={[styles.submitButton, createPromoterMutation.isPending && styles.submitButtonDisabled]}
           onPress={handleSubmit}
-          disabled={isSubmitting}
+          disabled={createPromoterMutation.isPending}
         >
           <LinearGradient
-            colors={isSubmitting ? [Colors.dark.textMuted, Colors.dark.textMuted] : Colors.dark.gradient.primary as [string, string]}
+            colors={createPromoterMutation.isPending ? [Colors.dark.textMuted, Colors.dark.textMuted] : Colors.dark.gradient.primary as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.submitGradient}
           >
-            <Save color="#FFF" size={20} />
+            {createPromoterMutation.isPending ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Save color="#FFF" size={20} />
+            )}
             <Text style={styles.submitText}>
-              {isSubmitting ? 'Guardando...' : 'Crear promotor'}
+              {createPromoterMutation.isPending ? 'Guardando...' : 'Crear promotor'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, RefreshControl, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Plus, Search, Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, MoreVertical } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 interface Promoter {
   id: string;
@@ -12,7 +13,7 @@ interface Promoter {
   phone?: string;
   companyName?: string;
   stripeAccountId?: string;
-  stripeAccountStatus: 'pending' | 'active' | 'disabled';
+  stripeAccountStatus?: 'pending' | 'active' | 'disabled' | null;
   commissionPercentage: number;
   isActive: boolean;
   eventCount: number;
@@ -22,52 +23,15 @@ interface Promoter {
 export default function PromotersScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   
-  const [promoters] = useState<Promoter[]>([
-    {
-      id: '1',
-      name: 'Carlos García',
-      email: 'carlos@eventos.com',
-      phone: '+34 612 345 678',
-      companyName: 'Eventos Costa del Sol',
-      stripeAccountId: 'acct_1234567890',
-      stripeAccountStatus: 'active',
-      commissionPercentage: 5,
-      isActive: true,
-      eventCount: 8,
-      totalEarnings: 12450.00,
-    },
-    {
-      id: '2',
-      name: 'María López',
-      email: 'maria@nightlife.es',
-      phone: '+34 698 765 432',
-      companyName: 'Nightlife Productions',
-      stripeAccountStatus: 'pending',
-      commissionPercentage: 5,
-      isActive: true,
-      eventCount: 3,
-      totalEarnings: 4200.00,
-    },
-    {
-      id: '3',
-      name: 'Pedro Sánchez',
-      email: 'pedro@fiestas.com',
-      companyName: 'Fiestas del Sur',
-      stripeAccountId: 'acct_0987654321',
-      stripeAccountStatus: 'active',
-      commissionPercentage: 7,
-      isActive: true,
-      eventCount: 12,
-      totalEarnings: 28900.00,
-    },
-  ]);
+  const promotersQuery = trpc.promoters.list.useQuery();
+  const promoters: Promoter[] = (promotersQuery.data || []).map(p => ({
+    ...p,
+    stripeAccountStatus: (p.stripeAccountStatus as 'pending' | 'active' | 'disabled' | null) || 'pending',
+  }));
 
   const onRefresh = async () => {
-    setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    await promotersQuery.refetch();
   };
 
   const filteredPromoters = promoters.filter(p =>
@@ -84,10 +48,11 @@ export default function PromotersScreen() {
     switch (status) {
       case 'active':
         return { color: Colors.dark.success, label: 'Stripe activo' };
-      case 'pending':
-        return { color: Colors.dark.warning, label: 'Stripe pendiente' };
       case 'disabled':
         return { color: Colors.dark.error, label: 'Stripe deshabilitado' };
+      case 'pending':
+      default:
+        return { color: Colors.dark.warning, label: 'Stripe pendiente' };
     }
   };
 
@@ -196,17 +161,24 @@ export default function PromotersScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={promotersQuery.isRefetching}
             onRefresh={onRefresh}
             tintColor={Colors.dark.primary}
           />
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Building2 color={Colors.dark.textMuted} size={48} />
-            <Text style={styles.emptyTitle}>No hay promotores</Text>
-            <Text style={styles.emptyText}>Añade promotores para gestionar sus eventos y pagos</Text>
-          </View>
+          promotersQuery.isLoading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color={Colors.dark.primary} />
+              <Text style={styles.loadingText}>Cargando promotores...</Text>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Building2 color={Colors.dark.textMuted} size={48} />
+              <Text style={styles.emptyTitle}>No hay promotores</Text>
+              <Text style={styles.emptyText}>Añade promotores para gestionar sus eventos y pagos</Text>
+            </View>
+          )
         }
       />
 
@@ -387,5 +359,15 @@ const styles = StyleSheet.create({
     height: 56,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingState: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 80,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: Colors.dark.textMuted,
   },
 });

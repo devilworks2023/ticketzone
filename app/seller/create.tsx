@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function CreateSellerScreen() {
   const router = useRouter();
-  const { addSeller } = useApp();
+  const createSellerMutation = trpc.sellers.create.useMutation();
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -35,19 +35,18 @@ export default function CreateSellerScreen() {
     }
 
     try {
-      await addSeller({
+      await createSellerMutation.mutateAsync({
         name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim() || undefined,
         code: code.trim().toUpperCase(),
-        isActive: true,
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
-    } catch (error) {
+    } catch (error: any) {
       console.log('Error creating seller:', error);
-      Alert.alert('Error', 'No se pudo crear el vendedor');
+      Alert.alert('Error', error.message || 'No se pudo crear el vendedor');
     }
   };
 
@@ -59,8 +58,12 @@ export default function CreateSellerScreen() {
       <Stack.Screen 
         options={{ 
           headerRight: () => (
-            <TouchableOpacity onPress={handleCreate}>
-              <Text style={styles.saveButton}>Crear</Text>
+            <TouchableOpacity onPress={handleCreate} disabled={createSellerMutation.isPending}>
+              {createSellerMutation.isPending ? (
+                <ActivityIndicator color={Colors.dark.primary} size="small" />
+              ) : (
+                <Text style={styles.saveButton}>Crear</Text>
+              )}
             </TouchableOpacity>
           ),
         }} 

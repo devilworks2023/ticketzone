@@ -1,15 +1,25 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, Ticket, Euro, Clock, ChevronRight, Zap } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { events, getStats } = useApp();
-  const stats = getStats();
+  
+  const eventsQuery = trpc.events.list.useQuery();
+  const statsQuery = trpc.stats.dashboard.useQuery();
+
+  const events = eventsQuery.data || [];
+  const stats = statsQuery.data || {
+    totalRevenue: 0,
+    totalTicketsSold: 0,
+    todayRevenue: 0,
+    todayTickets: 0,
+    platformEarnings: 0,
+  };
   const activeEvents = events.filter(e => e.isActive);
 
   const formatCurrency = (amount: number) => {
@@ -59,8 +69,8 @@ export default function DashboardScreen() {
             <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + '20' }]}>
               <Zap color={Colors.dark.success} size={20} />
             </View>
-            <Text style={styles.statValueSmall}>{formatCurrency(stats.pendingWithdrawal)}</Text>
-            <Text style={styles.statLabelSmall}>Disponible retiro</Text>
+            <Text style={styles.statValueSmall}>{formatCurrency(stats.platformEarnings)}</Text>
+            <Text style={styles.statLabelSmall}>Comisiones plataforma</Text>
           </View>
         </View>
 
@@ -86,12 +96,16 @@ export default function DashboardScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Eventos Activos</Text>
-          <TouchableOpacity onPress={() => router.push('/events')}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/events')}>
             <Text style={styles.seeAll}>Ver todos</Text>
           </TouchableOpacity>
         </View>
 
-        {activeEvents.slice(0, 3).map((event) => {
+        {eventsQuery.isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={Colors.dark.primary} />
+          </View>
+        ) : activeEvents.slice(0, 3).map((event) => {
           const totalSold = event.ticketTiers.reduce((sum, t) => sum + t.sold, 0);
           const totalCapacity = event.ticketTiers.reduce((sum, t) => sum + t.quantity, 0);
           const progress = totalCapacity > 0 ? (totalSold / totalCapacity) * 100 : 0;
@@ -337,5 +351,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#FFF',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center' as const,
   },
 });

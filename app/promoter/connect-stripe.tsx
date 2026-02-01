@@ -1,24 +1,73 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CreditCard, Shield, Zap, CheckCircle, ExternalLink, ArrowRight, Building2 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
 
 export default function ConnectStripeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const promoterId = params.promoterId as string;
+  const promoterEmail = params.email as string;
+  const promoterName = params.name as string;
+  
   const [isConnecting, setIsConnecting] = useState(false);
   const [step, setStep] = useState<'intro' | 'connecting' | 'success'>('intro');
+  
+
+  const createConnectAccount = trpc.payments.createConnectAccount.useMutation();
+  const createOnboardingLink = trpc.payments.createConnectOnboardingLink.useMutation();
 
   const handleConnectStripe = async () => {
+    if (!promoterId || !promoterEmail) {
+      Alert.alert('Error', 'Faltan datos del promotor. Por favor, vuelve atrás e intenta de nuevo.');
+      return;
+    }
+
     setIsConnecting(true);
     setStep('connecting');
 
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const accountResult = await createConnectAccount.mutateAsync({
+        promoterId,
+        email: promoterEmail,
+        businessName: promoterName,
+      });
 
-    setStep('success');
-    setIsConnecting(false);
+      
+
+      const baseUrl = Platform.OS === 'web' 
+        ? window.location.origin 
+        : 'https://tickets.devil-works.com';
+
+      const linkResult = await createOnboardingLink.mutateAsync({
+        accountId: accountResult.accountId,
+        returnUrl: `${baseUrl}/promoter/dashboard?connected=true&promoterId=${promoterId}`,
+        refreshUrl: `${baseUrl}/promoter/connect-stripe?promoterId=${promoterId}&email=${promoterEmail}&name=${promoterName}`,
+      });
+
+      if (Platform.OS === 'web') {
+        window.location.href = linkResult.url;
+      } else {
+        const canOpen = await Linking.canOpenURL(linkResult.url);
+        if (canOpen) {
+          await Linking.openURL(linkResult.url);
+          setStep('success');
+        } else {
+          Alert.alert('Error', 'No se puede abrir el enlace de Stripe');
+          setStep('intro');
+        }
+      }
+    } catch (error: any) {
+      console.error('Stripe Connect error:', error);
+      Alert.alert('Error', error.message || 'No se pudo conectar con Stripe');
+      setStep('intro');
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const benefits = [

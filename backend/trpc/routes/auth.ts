@@ -15,24 +15,46 @@ function verifyPassword(password: string, hash: string): boolean {
 }
 
 export const authRouter = createTRPCRouter({
+  debugUsers: publicProcedure.query(({ ctx }) => {
+    const users = ctx.db.prepare('SELECT id, email, name, role, is_active FROM users').all() as any[];
+    console.log('[DEBUG] Users in database:', JSON.stringify(users));
+    return users.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      isActive: u.is_active === 1,
+    }));
+  }),
+
   login: publicProcedure
     .input(z.object({
       email: z.string().email(),
       password: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
+      console.log('[LOGIN] Attempting login for email:', input.email.toLowerCase());
+      
       const user = ctx.db.prepare(`
         SELECT * FROM users WHERE email = ? AND is_active = 1
       `).get(input.email.toLowerCase()) as any;
 
+      console.log('[LOGIN] User found:', user ? 'Yes' : 'No');
+      
       if (!user) {
+        console.log('[LOGIN] User not found or inactive');
         throw new Error('Usuario no encontrado o inactivo');
       }
 
-      if (!verifyPassword(input.password, user.password_hash)) {
+      const passwordMatch = verifyPassword(input.password, user.password_hash);
+      console.log('[LOGIN] Password match:', passwordMatch);
+      
+      if (!passwordMatch) {
+        console.log('[LOGIN] Password mismatch');
         throw new Error('Contraseña incorrecta');
       }
 
+      console.log('[LOGIN] Login successful for:', user.email);
       return {
         success: true,
         user: {

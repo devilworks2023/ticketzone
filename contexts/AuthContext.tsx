@@ -81,6 +81,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
       console.log('[AUTH] Intentando login con email:', email);
+      console.log('[AUTH] Backend URL:', process.env.EXPO_PUBLIC_RORK_API_BASE_URL);
+      
       const result = await loginMutation.mutateAsync({ email: email.toLowerCase(), password });
       console.log('[AUTH] Resultado del login:', JSON.stringify(result));
       
@@ -105,9 +107,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } catch (error: any) {
       console.log('[AUTH] Error en login:', error);
       console.log('[AUTH] Error message:', error?.message);
-      console.log('[AUTH] Error data:', error?.data);
+      console.log('[AUTH] Error shape:', error?.shape);
+      console.log('[AUTH] Full error:', JSON.stringify(error, null, 2));
       
-      const errorMessage = error?.message || 'Error de conexión con el servidor';
+      let errorMessage = 'Error de conexión con el servidor';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.shape?.message) {
+        errorMessage = error.shape.message;
+      }
+      
       return { success: false, message: errorMessage };
     }
   }, [loginMutation]);

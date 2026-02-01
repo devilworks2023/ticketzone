@@ -9,6 +9,8 @@ import {
   Image,
   Alert,
   Platform,
+  ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,15 +23,36 @@ import {
   ChevronRight,
   ArrowLeft,
   QrCode,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
+  LogOut,
 } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
 
+type AuthMode = 'login' | 'register';
+
 export default function BuyerScreen() {
   const { events, tickets } = useApp();
-  const { buyerEmail, saveBuyerEmail } = useAuth();
-  const [email, setEmail] = useState(buyerEmail || '');
+  const { 
+    buyerUser, 
+    buyerEmail, 
+    isBuyerAuthenticated, 
+    loginBuyer, 
+    registerBuyer, 
+    logoutBuyer 
+  } = useAuth();
+  
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [showPurchases, setShowPurchases] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -40,16 +63,77 @@ export default function BuyerScreen() {
   );
 
   const myTickets = tickets.filter(t => 
-    t.buyerEmail.toLowerCase() === email.toLowerCase()
+    buyerEmail && t.buyerEmail.toLowerCase() === buyerEmail.toLowerCase()
   );
 
-  const handleViewPurchases = () => {
+  const handleLogin = async () => {
     if (!email.trim()) {
-      Alert.alert('Email requerido', 'Ingresa el email con el que compraste tus entradas');
+      Alert.alert('Error', 'Por favor ingresa tu email');
       return;
     }
-    saveBuyerEmail(email.trim());
-    setShowPurchases(true);
+    if (!password.trim()) {
+      Alert.alert('Error', 'Por favor ingresa tu contraseña');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await loginBuyer(email.trim(), password);
+      if (!result.success) {
+        Alert.alert('Error', result.message);
+      }
+    } catch (error) {
+      console.log('Login error:', error);
+      Alert.alert('Error', 'Ocurrió un error al iniciar sesión');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    if (!name.trim()) {
+      Alert.alert('Error', 'Por favor ingresa tu nombre');
+      return;
+    }
+    if (!email.trim()) {
+      Alert.alert('Error', 'Por favor ingresa tu email');
+      return;
+    }
+    if (!password.trim() || password.length < 6) {
+      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await registerBuyer(email.trim(), password, name.trim());
+      if (!result.success) {
+        Alert.alert('Error', result.message);
+      }
+    } catch (error) {
+      console.log('Register error:', error);
+      Alert.alert('Error', 'Ocurrió un error al registrar');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro de que quieres cerrar sesión?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Cerrar Sesión', 
+          style: 'destructive',
+          onPress: () => {
+            logoutBuyer();
+            setShowPurchases(false);
+          }
+        },
+      ]
+    );
   };
 
   const handleBuyTickets = (eventId: string) => {
@@ -59,6 +143,136 @@ export default function BuyerScreen() {
   const getEventForTicket = (eventId: string) => {
     return events.find(e => e.id === eventId);
   };
+
+  if (!isBuyerAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <ArrowLeft color={Colors.dark.text} size={24} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Área de Comprador</Text>
+            <View style={styles.backButton} />
+          </View>
+
+          <ScrollView 
+            style={styles.scrollView} 
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.authContent}
+          >
+            <View style={styles.authContainer}>
+              <View style={styles.logoContainer}>
+                <View style={styles.logoCircle}>
+                  <Ticket color={Colors.dark.primary} size={40} />
+                </View>
+                <Text style={styles.authTitle}>
+                  {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                </Text>
+                <Text style={styles.authSubtitle}>
+                  {authMode === 'login' 
+                    ? 'Accede para ver tus entradas y comprar nuevas'
+                    : 'Regístrate para comprar entradas y llevar un registro'
+                  }
+                </Text>
+              </View>
+
+              {authMode === 'register' && (
+                <View style={styles.inputContainer}>
+                  <User color={Colors.dark.textMuted} size={20} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Nombre completo"
+                    placeholderTextColor={Colors.dark.textMuted}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
+                  />
+                </View>
+              )}
+
+              <View style={styles.inputContainer}>
+                <Mail color={Colors.dark.textMuted} size={20} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email"
+                  placeholderTextColor={Colors.dark.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Lock color={Colors.dark.textMuted} size={20} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Contraseña"
+                  placeholderTextColor={Colors.dark.textMuted}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  {showPassword ? (
+                    <EyeOff color={Colors.dark.textMuted} size={20} />
+                  ) : (
+                    <Eye color={Colors.dark.textMuted} size={20} />
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.authButton, isLoading && styles.authButtonDisabled]}
+                onPress={authMode === 'login' ? handleLogin : handleRegister}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.authButtonText}>
+                    {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.switchModeButton}
+                onPress={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setPassword('');
+                }}
+              >
+                <Text style={styles.switchModeText}>
+                  {authMode === 'login' 
+                    ? '¿No tienes cuenta? Regístrate'
+                    : '¿Ya tienes cuenta? Inicia sesión'
+                  }
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.infoBox}>
+              <Text style={styles.infoTitle}>¿Por qué crear una cuenta?</Text>
+              <Text style={styles.infoText}>
+                • Ver todas tus entradas en un solo lugar{'\n'}
+                • Acceso seguro a tus compras{'\n'}
+                • Historial de todos tus eventos
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
 
   if (showPurchases) {
     return (
@@ -71,12 +285,23 @@ export default function BuyerScreen() {
             <ArrowLeft color={Colors.dark.text} size={24} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Mis Entradas</Text>
-          <View style={styles.backButton} />
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleLogout}
+          >
+            <LogOut color={Colors.dark.error} size={22} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          <View style={styles.emailBadge}>
-            <Text style={styles.emailBadgeText}>{email}</Text>
+          <View style={styles.userBadge}>
+            <View style={styles.userAvatar}>
+              <User color={Colors.dark.primary} size={20} />
+            </View>
+            <View>
+              <Text style={styles.userName}>{buyerUser?.name}</Text>
+              <Text style={styles.userEmail}>{buyerEmail}</Text>
+            </View>
           </View>
 
           {myTickets.length === 0 ? (
@@ -84,8 +309,14 @@ export default function BuyerScreen() {
               <Ticket color={Colors.dark.textMuted} size={64} />
               <Text style={styles.emptyTitle}>No tienes entradas</Text>
               <Text style={styles.emptySubtitle}>
-                Las entradas compradas con este email aparecerán aquí
+                Las entradas compradas con esta cuenta aparecerán aquí
               </Text>
+              <TouchableOpacity 
+                style={styles.browseButton}
+                onPress={() => setShowPurchases(false)}
+              >
+                <Text style={styles.browseButtonText}>Ver Eventos</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.ticketsList}>
@@ -157,30 +388,32 @@ export default function BuyerScreen() {
           <ArrowLeft color={Colors.dark.text} size={24} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Comprar Entradas</Text>
-        <View style={styles.backButton} />
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={handleLogout}
+        >
+          <LogOut color={Colors.dark.error} size={22} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.purchasesSection}>
-          <Text style={styles.sectionTitle}>Consultar mis compras</Text>
-          <View style={styles.emailInputContainer}>
-            <TextInput
-              style={styles.emailInput}
-              placeholder="Tu email de compra"
-              placeholderTextColor={Colors.dark.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <TouchableOpacity 
-              style={styles.viewPurchasesButton}
-              onPress={handleViewPurchases}
-            >
-              <Text style={styles.viewPurchasesText}>Ver</Text>
-            </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.purchasesSection}
+          onPress={() => setShowPurchases(true)}
+        >
+          <View style={styles.userRow}>
+            <View style={styles.userAvatar}>
+              <User color={Colors.dark.primary} size={20} />
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={styles.welcomeText}>Hola, {buyerUser?.name}</Text>
+              <Text style={styles.ticketCountText}>
+                {myTickets.length} {myTickets.length === 1 ? 'entrada' : 'entradas'}
+              </Text>
+            </View>
+            <ChevronRight color={Colors.dark.primary} size={24} />
           </View>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.eventsSection}>
           <Text style={styles.sectionTitle}>Eventos Disponibles</Text>
@@ -243,6 +476,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.dark.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,11 +496,107 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
   },
   scrollView: {
     flex: 1,
+  },
+  authContent: {
+    padding: 16,
+  },
+  authContainer: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 16,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.dark.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: Colors.dark.primary,
+  },
+  authTitle: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: Colors.dark.text,
+    marginBottom: 8,
+  },
+  authSubtitle: {
+    fontSize: 14,
+    color: Colors.dark.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.dark.background,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  input: {
+    flex: 1,
+    height: 52,
+    color: Colors.dark.text,
+    fontSize: 15,
+    marginLeft: 12,
+  },
+  authButton: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 12,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  authButtonDisabled: {
+    opacity: 0.7,
+  },
+  authButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  switchModeButton: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  switchModeText: {
+    color: Colors.dark.primary,
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  infoBox: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.dark.text,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    lineHeight: 22,
   },
   purchasesSection: {
     padding: 16,
@@ -272,38 +604,37 @@ const styles = StyleSheet.create({
     margin: 16,
     borderRadius: 16,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.dark.text,
-    marginBottom: 12,
-  },
-  emailInputContainer: {
+  userRow: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
   },
-  emailInput: {
-    flex: 1,
-    height: 48,
-    backgroundColor: Colors.dark.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    color: Colors.dark.text,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  viewPurchasesButton: {
-    backgroundColor: Colors.dark.primary,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+  userAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.dark.primary + '20',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  viewPurchasesText: {
-    color: '#000',
-    fontWeight: '700',
-    fontSize: 14,
+  userInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  welcomeText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.dark.text,
+  },
+  ticketCountText: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: Colors.dark.text,
+    marginBottom: 12,
   },
   eventsSection: {
     paddingHorizontal: 16,
@@ -350,7 +681,7 @@ const styles = StyleSheet.create({
   },
   eventName: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
     marginBottom: 12,
   },
@@ -375,20 +706,27 @@ const styles = StyleSheet.create({
   },
   eventPrice: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.primary,
   },
-  emailBadge: {
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.dark.surface,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    alignSelf: 'center',
-    marginBottom: 20,
+    paddingVertical: 12,
+    margin: 16,
+    borderRadius: 12,
+    gap: 12,
   },
-  emailBadgeText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 14,
+  userName: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.dark.text,
+  },
+  userEmail: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
   },
   emptyState: {
     padding: 40,
@@ -396,7 +734,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
     marginTop: 16,
     marginBottom: 8,
@@ -405,6 +743,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.dark.textMuted,
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  browseButton: {
+    backgroundColor: Colors.dark.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  browseButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600' as const,
   },
   ticketsList: {
     paddingHorizontal: 16,
@@ -434,7 +784,7 @@ const styles = StyleSheet.create({
   ticketStatusText: {
     color: Colors.dark.success,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '600' as const,
   },
   ticketStatusTextUsed: {
     color: Colors.dark.textMuted,
@@ -445,7 +795,7 @@ const styles = StyleSheet.create({
   },
   ticketEventName: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
     marginBottom: 12,
   },
@@ -480,7 +830,7 @@ const styles = StyleSheet.create({
   },
   ticketPrice: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.primary,
   },
 });

@@ -226,7 +226,11 @@ function initializeDatabase(db) {
     const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
     db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
       .run(adminId, 'admin@ticketzone.com', passwordHash, 'Administrador', 'admin');
-    console.log('✓ Usuario admin creado: admin@ticketzone.com / admin123');
+    console.log('╔═══════════════════════════════════════════╗');
+    console.log('║  ADMIN CREADO:                            ║');
+    console.log('║  Email: admin@ticketzone.com              ║');
+    console.log('║  Password: admin123                       ║');
+    console.log('╚═══════════════════════════════════════════╝');
   }
 
   console.log('✓ Base de datos inicializada correctamente');

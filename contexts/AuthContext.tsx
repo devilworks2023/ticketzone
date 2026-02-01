@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   USER: 'ticketera_user',
   USERS: 'ticketera_users',
   BUYER_EMAIL: 'ticketera_buyer_email',
+  BUYER_USER: 'ticketera_buyer_user',
 };
 
 const defaultUsers: User[] = [
@@ -36,6 +37,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [users, setUsers] = useState<User[]>(defaultUsers);
   const [isLoading, setIsLoading] = useState(true);
   const [buyerEmail, setBuyerEmail] = useState<string | null>(null);
+  const [buyerUser, setBuyerUser] = useState<User | null>(null);
 
   useEffect(() => {
     loadAuthData();
@@ -43,10 +45,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const loadAuthData = async () => {
     try {
-      const [userData, usersData, buyerEmailData] = await Promise.all([
+      const [userData, usersData, buyerEmailData, buyerUserData] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.USER),
         AsyncStorage.getItem(STORAGE_KEYS.USERS),
         AsyncStorage.getItem(STORAGE_KEYS.BUYER_EMAIL),
+        AsyncStorage.getItem(STORAGE_KEYS.BUYER_USER),
       ]);
 
       if (userData) {
@@ -57,6 +60,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
       if (buyerEmailData) {
         setBuyerEmail(buyerEmailData);
+      }
+      if (buyerUserData) {
+        setBuyerUser(JSON.parse(buyerUserData));
       }
     } catch (error) {
       console.log('Error loading auth data:', error);
@@ -131,6 +137,78 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     await AsyncStorage.setItem(STORAGE_KEYS.BUYER_EMAIL, email);
   }, []);
 
+  const loginUserMutation = trpc.auth.registerUser.useMutation();
+  const loginMutationBuyer = trpc.auth.login.useMutation();
+
+  const loginBuyer = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const result = await loginMutationBuyer.mutateAsync({ email, password });
+      
+      if (result.success && result.user) {
+        if (result.user.role !== 'buyer') {
+          return { success: false, message: 'Esta cuenta no es de comprador. Usa el login de administración.' };
+        }
+        
+        const loggedBuyer: User = {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: 'buyer',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        };
+        
+        setBuyerUser(loggedBuyer);
+        setBuyerEmail(result.user.email);
+        await AsyncStorage.setItem(STORAGE_KEYS.BUYER_USER, JSON.stringify(loggedBuyer));
+        await AsyncStorage.setItem(STORAGE_KEYS.BUYER_EMAIL, result.user.email);
+        
+        return { success: true, message: 'Inicio de sesión exitoso' };
+      }
+      
+      return { success: false, message: 'Error al iniciar sesión' };
+    } catch (error: any) {
+      console.log('Buyer login error:', error);
+      return { success: false, message: error.message || 'Error al iniciar sesión' };
+    }
+  }, [loginMutationBuyer]);
+
+  const registerBuyer = useCallback(async (email: string, password: string, name: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const result = await loginUserMutation.mutateAsync({ email, password, name });
+      
+      if (result.success && result.user) {
+        const newBuyer: User = {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: 'buyer',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+        };
+        
+        setBuyerUser(newBuyer);
+        setBuyerEmail(result.user.email);
+        await AsyncStorage.setItem(STORAGE_KEYS.BUYER_USER, JSON.stringify(newBuyer));
+        await AsyncStorage.setItem(STORAGE_KEYS.BUYER_EMAIL, result.user.email);
+        
+        return { success: true, message: 'Registro exitoso' };
+      }
+      
+      return { success: false, message: 'Error al registrar' };
+    } catch (error: any) {
+      console.log('Buyer register error:', error);
+      return { success: false, message: error.message || 'Error al registrar' };
+    }
+  }, [loginUserMutation]);
+
+  const logoutBuyer = useCallback(async () => {
+    setBuyerUser(null);
+    setBuyerEmail(null);
+    await AsyncStorage.removeItem(STORAGE_KEYS.BUYER_USER);
+    await AsyncStorage.removeItem(STORAGE_KEYS.BUYER_EMAIL);
+  }, []);
+
   const canAccessAdmin = useCallback(() => {
     return user?.role === 'admin' || user?.role === 'seller';
   }, [user]);
@@ -168,8 +246,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isLoading,
     isAuthenticated: !!user,
     buyerEmail,
+    buyerUser,
+    isBuyerAuthenticated: !!buyerUser,
     login,
     logout,
+    loginBuyer,
+    registerBuyer,
+    logoutBuyer,
     registerUser,
     saveBuyerEmail,
     canAccessAdmin,

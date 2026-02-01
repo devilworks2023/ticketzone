@@ -126,11 +126,11 @@ export default function LoginScreen() {
             </View>
 
             <TouchableOpacity style={styles.buyerButton} onPress={handleBuyerAccess}>
-              <Text style={styles.buyerButtonText}>Acceder como Comprador</Text>
+              <Text style={styles.buyerButtonText}>Soy Comprador</Text>
             </TouchableOpacity>
 
             <Text style={styles.buyerHint}>
-              Sin necesidad de registro, compra y consulta tus entradas
+              Compra entradas y consulta tus compras con tu cuenta
             </Text>
 
             <View style={styles.registerSection}>
@@ -156,7 +156,7 @@ export default function LoginScreen() {
 
           <View style={styles.demoCredentials}>
             <Text style={styles.demoTitle}>Credenciales de administrador:</Text>
-            <Text style={styles.demoText}>Email: devilworks2023@gmail.com</Text>
+            <Text style={styles.demoText}>Email: admin@ticketzone.com</Text>
             <Text style={styles.demoText}>Contraseña: admin123</Text>
           </View>
         </View>

@@ -242,11 +242,25 @@ function initializeDatabase(db) {
     db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
       .run(adminId, 'devilworks2023@gmail.com', passwordHash, 'Administrador', 'admin');
     console.log('╔═══════════════════════════════════════════╗');
-    console.log('║  ADMIN CREADO:                            ║');
+    console.log('║  NUEVO ADMIN CREADO:                      ║');
     console.log('║  Email: devilworks2023@gmail.com          ║');
     console.log('║  Password: admin123                       ║');
     console.log('╚═══════════════════════════════════════════╝');
   }
+
+  // Siempre mostrar los admins existentes al iniciar
+  const admins = db.prepare('SELECT email, name, is_active FROM users WHERE role = ?').all('admin');
+  console.log('╔═══════════════════════════════════════════════════════╗');
+  console.log('║  ADMINISTRADORES EN EL SISTEMA:                       ║');
+  console.log('╠═══════════════════════════════════════════════════════╣');
+  admins.forEach(admin => {
+    const status = admin.is_active ? '✓ Activo' : '✗ Inactivo';
+    console.log(`║  ${admin.email.padEnd(35)} ${status.padEnd(12)} ║`);
+  });
+  console.log('╠═══════════════════════════════════════════════════════╣');
+  console.log('║  Password por defecto: admin123                       ║');
+  console.log('║  (Cámbiala después de iniciar sesión)                 ║');
+  console.log('╚═══════════════════════════════════════════════════════╝');
 
   console.log('✓ Base de datos inicializada correctamente');
 }

@@ -1328,8 +1328,8 @@ console.log('╔═════════════════════�
 console.log('║     TicketZone Backend Server             ║');
 console.log('╚═══════════════════════════════════════════╝');
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`✓ Servidor en http://localhost:${info.port}`);
-  console.log(`✓ API tRPC en http://localhost:${info.port}/api/trpc`);
-  console.log(`✓ Health check en http://localhost:${info.port}/api/health`);
+serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
+  console.log(`✓ Servidor en http://0.0.0.0:${info.port}`);
+  console.log(`✓ API tRPC en http://0.0.0.0:${info.port}/api/trpc`);
+  console.log(`✓ Health check en http://0.0.0.0:${info.port}/api/health`);
 });

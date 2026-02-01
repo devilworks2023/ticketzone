@@ -76,8 +76,15 @@ export default function CheckoutScreen() {
       setPaymentIntentId(result.paymentIntentId);
 
       if (Platform.OS !== 'web') {
+        if (!result.clientSecret) {
+          console.error('No client secret received');
+          setErrorMessage('Error al preparar el pago');
+          setStep('error');
+          return;
+        }
+
         const { error } = await initPaymentSheet({
-          paymentIntentClientSecret: result.clientSecret ?? undefined,
+          paymentIntentClientSecret: result.clientSecret,
           merchantDisplayName: 'TicketZone',
           allowsDelayedPaymentMethods: false,
           defaultBillingDetails: {

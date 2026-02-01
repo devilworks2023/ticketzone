@@ -192,6 +192,20 @@ function initializeDatabase(db: Database.Database) {
       FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
     );
 
+    -- Códigos de invitación para registro de promotores y vendedores
+    CREATE TABLE IF NOT EXISTS invitation_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('promoter', 'seller')),
+      max_uses INTEGER DEFAULT 1,
+      current_uses INTEGER DEFAULT 0,
+      expires_at TEXT,
+      created_by TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
     -- Índices para mejor rendimiento
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_qr ON tickets(qr_code);
@@ -199,6 +213,7 @@ function initializeDatabase(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_events_promoter ON events(promoter_id);
     CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
     CREATE INDEX IF NOT EXISTS idx_promoter_subscriptions_promoter ON promoter_subscriptions(promoter_id);
+    CREATE INDEX IF NOT EXISTS idx_invitation_codes_code ON invitation_codes(code);
   `);
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get() as { count: number };

@@ -23,6 +23,7 @@ import {
   DollarSign,
   BarChart3,
   Shield,
+  Key,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -154,6 +155,13 @@ export default function AdminDashboardScreen() {
                 subtitle="Administrar vendedores y comisiones"
                 onPress={() => router.push('/admin/sellers-manage')}
                 color="#9b59b6"
+              />
+              <AdminMenuItem
+                icon={<Key color="#e67e22" size={22} />}
+                title="Códigos de Invitación"
+                subtitle="Generar códigos para registro de profesionales"
+                onPress={() => router.push('/admin/invitations')}
+                color="#e67e22"
               />
             </View>
 

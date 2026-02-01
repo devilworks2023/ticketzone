@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Lock, Mail, Ticket, Eye, EyeOff } from 'lucide-react-native';
+import { Lock, Mail, Ticket, Eye, EyeOff, UserPlus, Key } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
 
@@ -132,6 +132,26 @@ export default function LoginScreen() {
             <Text style={styles.buyerHint}>
               Sin necesidad de registro, compra y consulta tus entradas
             </Text>
+
+            <View style={styles.registerSection}>
+              <Text style={styles.registerTitle}>¿No tienes cuenta?</Text>
+              <View style={styles.registerButtons}>
+                <TouchableOpacity
+                  style={styles.registerButton}
+                  onPress={() => router.push('/auth/register')}
+                >
+                  <UserPlus color={Colors.dark.primary} size={18} />
+                  <Text style={styles.registerButtonText}>Registrarse</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.registerProButton}
+                  onPress={() => router.push('/auth/register-pro')}
+                >
+                  <Key color={Colors.dark.secondary} size={18} />
+                  <Text style={styles.registerProText}>Profesional</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
 
           <View style={styles.demoCredentials}>
@@ -270,6 +290,52 @@ const styles = StyleSheet.create({
     color: Colors.dark.textMuted,
     textAlign: 'center',
     marginTop: 12,
+  },
+  registerSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  registerTitle: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  registerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  registerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.dark.primary + '15',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  registerButtonText: {
+    color: Colors.dark.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  registerProButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.dark.secondary + '15',
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  registerProText: {
+    color: Colors.dark.secondary,
+    fontSize: 13,
+    fontWeight: '600',
   },
   demoCredentials: {
     backgroundColor: Colors.dark.surface,

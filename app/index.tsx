@@ -23,6 +23,8 @@ import {
   Briefcase,
   QrCode,
   ArrowLeft,
+  UserPlus,
+  Key,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
@@ -307,6 +309,38 @@ export default function PublicEventsScreen() {
             <Text style={styles.sellerFooterText}>
               Crea y gestiona eventos, controla vendedores, accede a taquilla y escaneo
             </Text>
+
+            <View style={styles.registerSection}>
+              <View style={styles.registerDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>¿Aún no tienes cuenta?</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <View style={styles.registerButtons}>
+                <TouchableOpacity
+                  style={styles.registerUserButton}
+                  onPress={() => router.push('/auth/register')}
+                  activeOpacity={0.8}
+                >
+                  <UserPlus color={Colors.dark.primary} size={20} />
+                  <Text style={styles.registerUserButtonText}>Registrarse</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.registerProButton}
+                  onPress={() => router.push('/auth/register-pro')}
+                  activeOpacity={0.8}
+                >
+                  <Key color={Colors.dark.secondary} size={20} />
+                  <Text style={styles.registerProButtonText}>Registro Profesional</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.registerHint}>
+                El registro profesional requiere un código de invitación del administrador
+              </Text>
+            </View>
           </View>
 
           <View style={{ height: 40 }} />
@@ -603,6 +637,58 @@ const styles = StyleSheet.create({
     color: Colors.dark.textMuted,
     marginTop: 12,
     lineHeight: 18,
+  },
+  registerSection: {
+    marginTop: 24,
+  },
+  registerDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  registerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  registerUserButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.dark.primary + '15',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.primary + '40',
+  },
+  registerUserButtonText: {
+    color: Colors.dark.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  registerProButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.dark.secondary + '15',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.dark.secondary + '40',
+  },
+  registerProButtonText: {
+    color: Colors.dark.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  registerHint: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: Colors.dark.textMuted,
+    marginTop: 12,
   },
   emailBadge: {
     backgroundColor: Colors.dark.surface,

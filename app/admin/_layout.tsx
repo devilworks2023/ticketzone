@@ -21,6 +21,7 @@ export default function AdminLayout() {
       <Stack.Screen name="payments" options={{ title: 'Pagos' }} />
       <Stack.Screen name="reports" options={{ title: 'Reportes' }} />
       <Stack.Screen name="settings" options={{ title: 'Configuración' }} />
+      <Stack.Screen name="invitations" options={{ title: 'Códigos de Invitación' }} />
     </Stack>
   );
 }

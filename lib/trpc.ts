@@ -11,16 +11,21 @@ const getBaseUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
   
   if (envUrl) {
+    console.log('[TRPC] Using env URL:', envUrl);
     return envUrl;
   }
   
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location) {
-      return window.location.origin;
+      const origin = window.location.origin;
+      console.log('[TRPC] Using window origin:', origin);
+      return origin;
     }
+    console.log('[TRPC] Web but no window, using empty string');
     return '';
   }
   
+  console.log('[TRPC] Native platform, using empty string');
   return '';
 };
 

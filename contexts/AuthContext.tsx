@@ -80,7 +80,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
-      const result = await loginMutation.mutateAsync({ email, password });
+      console.log('[AUTH] Intentando login con email:', email);
+      const result = await loginMutation.mutateAsync({ email: email.toLowerCase(), password });
+      console.log('[AUTH] Resultado del login:', JSON.stringify(result));
       
       if (result.success && result.user) {
         const loggedUser: User = {
@@ -94,14 +96,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         
         setUser(loggedUser);
         await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(loggedUser));
+        console.log('[AUTH] Usuario guardado correctamente');
         
         return { success: true, message: 'Inicio de sesión exitoso' };
       }
       
       return { success: false, message: 'Error al iniciar sesión' };
     } catch (error: any) {
-      console.log('Login error:', error);
-      return { success: false, message: error.message || 'Error al iniciar sesión' };
+      console.log('[AUTH] Error en login:', error);
+      console.log('[AUTH] Error message:', error?.message);
+      console.log('[AUTH] Error data:', error?.data);
+      
+      const errorMessage = error?.message || 'Error de conexión con el servidor';
+      return { success: false, message: errorMessage };
     }
   }, [loginMutation]);
 

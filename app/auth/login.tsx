@@ -153,12 +153,6 @@ export default function LoginScreen() {
               </View>
             </View>
           </View>
-
-          <View style={styles.demoCredentials}>
-            <Text style={styles.demoTitle}>Credenciales de administrador:</Text>
-            <Text style={styles.demoText}>Email: admin@ticketzone.com</Text>
-            <Text style={styles.demoText}>Contraseña: admin123</Text>
-          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -336,23 +330,5 @@ const styles = StyleSheet.create({
     color: Colors.dark.secondary,
     fontSize: 13,
     fontWeight: '600',
-  },
-  demoCredentials: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  demoTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.dark.textSecondary,
-    marginBottom: 8,
-  },
-  demoText: {
-    fontSize: 12,
-    color: Colors.dark.textMuted,
-    marginBottom: 2,
   },
 });

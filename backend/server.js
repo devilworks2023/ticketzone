@@ -152,6 +152,7 @@ function initializeDatabase(db) {
       name TEXT NOT NULL,
       role TEXT DEFAULT 'admin',
       is_active INTEGER DEFAULT 1,
+      email_verified INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -202,6 +203,14 @@ function initializeDatabase(db) {
     CREATE INDEX IF NOT EXISTS idx_events_promoter ON events(promoter_id);
     CREATE INDEX IF NOT EXISTS idx_ticket_tiers_event ON ticket_tiers(event_id);
   `);
+
+  // Migraciones: añadir columnas que faltan en bases de datos existentes
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`);
+    console.log('>>> Migración: columna email_verified añadida a users');
+  } catch (e) {
+    // La columna ya existe, ignorar
+  }
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
   if (settingsCount.count === 0) {

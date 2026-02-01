@@ -9,6 +9,7 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'ticketzone.db');
 
@@ -862,6 +863,75 @@ function verifyPassword(password, hash) {
   return hashPassword(password) === hash;
 }
 
+const smtpTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.ionos.es',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+async function sendVerificationEmail(email, code, name) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('⚠️  SMTP no configurado - Código mostrado solo en logs');
+    console.log(`📧 Email: ${email} | Código: ${code}`);
+    return false;
+  }
+
+  const appUrl = process.env.APP_URL || 'https://tudominio.com';
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+
+  try {
+    await smtpTransporter.sendMail({
+      from: `"TicketZone" <${fromEmail}>`,
+      to: email,
+      subject: 'Verifica tu cuenta - TicketZone',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+            .container { max-width: 500px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 30px; text-align: center; }
+            .code { font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #667eea; background: #f0f3ff; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .footer { padding: 20px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #eee; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎟️ TicketZone</h1>
+            </div>
+            <div class="content">
+              <h2>¡Hola ${name}!</h2>
+              <p>Usa este código para verificar tu cuenta:</p>
+              <div class="code">${code}</div>
+              <p style="color: #666;">El código expira en 30 minutos.</p>
+            </div>
+            <div class="footer">
+              <p>Si no solicitaste esta verificación, ignora este email.</p>
+              <p>© ${new Date().getFullYear()} TicketZone</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    });
+    console.log(`✅ Email de verificación enviado a: ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error enviando email:', error.message);
+    console.log(`📧 Código de respaldo - Email: ${email} | Código: ${code}`);
+    return false;
+  }
+}
+
 const authRouter = createTRPCRouter({
   login: publicProcedure
     .input(z.object({
@@ -955,11 +1025,7 @@ const authRouter = createTRPCRouter({
         VALUES (?, ?, ?, 'user', ?, ?)
       `).run(verificationId, input.email.toLowerCase(), verificationCode, userData, expiresAt);
 
-      console.log('╔═══════════════════════════════════════════╗');
-      console.log('║  CÓDIGO DE VERIFICACIÓN                   ║');
-      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
-      console.log(`║  Código: ${verificationCode}                            ║`);
-      console.log('╚═══════════════════════════════════════════╝');
+      await sendVerificationEmail(input.email.toLowerCase(), verificationCode, input.name);
 
       return {
         success: true,
@@ -1096,11 +1162,8 @@ const authRouter = createTRPCRouter({
         UPDATE email_verifications SET code = ?, expires_at = ? WHERE id = ?
       `).run(newCode, newExpiresAt, existingVerification.id);
 
-      console.log('╔═══════════════════════════════════════════╗');
-      console.log('║  CÓDIGO DE VERIFICACIÓN REENVIADO         ║');
-      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
-      console.log(`║  Código: ${newCode}                            ║`);
-      console.log('╚═══════════════════════════════════════════╝');
+      const userData = existingVerification.user_data ? JSON.parse(existingVerification.user_data) : { name: 'Usuario' };
+      await sendVerificationEmail(input.email.toLowerCase(), newCode, userData.name || 'Usuario');
 
       return {
         success: true,
@@ -1151,12 +1214,7 @@ const authRouter = createTRPCRouter({
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(verificationId, input.email.toLowerCase(), verificationCode, invitation.type, userData, expiresAt);
 
-      console.log('╔═══════════════════════════════════════════╗');
-      console.log('║  CÓDIGO DE VERIFICACIÓN (PRO)             ║');
-      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
-      console.log(`║  Código: ${verificationCode}                            ║`);
-      console.log(`║  Tipo: ${invitation.type.padEnd(34)}║`);
-      console.log('╚═══════════════════════════════════════════╝');
+      await sendVerificationEmail(input.email.toLowerCase(), verificationCode, input.name);
 
       return {
         success: true,

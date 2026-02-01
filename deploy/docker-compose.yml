@@ -11,6 +11,12 @@ services:
       - NODE_ENV=production
       - TZ=Europe/Madrid
       - DATABASE_PATH=/app/data/ticketzone.db
+      - SMTP_HOST=${SMTP_HOST:-smtp.ionos.es}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM:-noreply@tudominio.com}
+      - APP_URL=${APP_URL:-https://tudominio.com}
     volumes:
       - ticketzone-data:/app/data
     healthcheck:

@@ -248,7 +248,7 @@ function initializeDatabase(db) {
   if (adminCount.count === 0) {
     const adminId = 'user_admin_' + Date.now();
     const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
-    db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
+    db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active, email_verified) VALUES (?, ?, ?, ?, ?, 1, 1)')
       .run(adminId, 'devilworks2023@gmail.com', passwordHash, 'Administrador', 'admin');
     console.log('╔═══════════════════════════════════════════╗');
     console.log('║  NUEVO ADMIN CREADO:                      ║');
@@ -256,6 +256,9 @@ function initializeDatabase(db) {
     console.log('║  Password: admin123                       ║');
     console.log('╚═══════════════════════════════════════════╝');
   }
+
+  // Asegurar que todos los admins existentes tengan email verificado
+  db.prepare('UPDATE users SET email_verified = 1 WHERE role = ?').run('admin');
 
   // Siempre mostrar los admins existentes al iniciar
   const admins = db.prepare('SELECT email, name, is_active FROM users WHERE role = ?').all('admin');

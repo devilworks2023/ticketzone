@@ -160,6 +160,41 @@ function initializeDatabase(db) {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS invitation_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL,
+      max_uses INTEGER DEFAULT 1,
+      current_uses INTEGER DEFAULT 0,
+      expires_at TEXT,
+      created_by TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS subscription_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      max_events INTEGER NOT NULL,
+      description TEXT,
+      features TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS promoter_subscriptions (
+      id TEXT PRIMARY KEY,
+      promoter_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      current_period_start TEXT,
+      current_period_end TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (promoter_id) REFERENCES promoters(id),
+      FOREIGN KEY (plan_id) REFERENCES subscription_plans(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tickets_event ON tickets(event_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_qr ON tickets(qr_code);
     CREATE INDEX IF NOT EXISTS idx_tickets_seller ON tickets(seller_id);
@@ -171,9 +206,27 @@ function initializeDatabase(db) {
   if (settingsCount.count === 0) {
     const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
     insertSetting.run('platform_name', 'TicketZone');
-    insertSetting.run('platform_commission', '5.0');
+    insertSetting.run('platform_commission', '0');
     insertSetting.run('currency', 'EUR');
     insertSetting.run('stripe_enabled', 'false');
+  }
+
+  const plansCount = db.prepare('SELECT COUNT(*) as count FROM subscription_plans').get();
+  if (plansCount.count === 0) {
+    const insertPlan = db.prepare('INSERT INTO subscription_plans (id, name, price, max_events, description, features, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)');
+    insertPlan.run('plan_basic', 'Básico', 29.99, 5, 'Ideal para empezar', JSON.stringify(['Hasta 5 eventos/mes', 'Soporte por email']));
+    insertPlan.run('plan_pro', 'Profesional', 59.99, 15, 'Para promotores activos', JSON.stringify(['Hasta 15 eventos/mes', 'Soporte prioritario', 'Estadísticas avanzadas']));
+    insertPlan.run('plan_enterprise', 'Empresarial', 99.99, 999, 'Sin límites', JSON.stringify(['Eventos ilimitados', 'Soporte 24/7', 'API access', 'Personalización']));
+  }
+
+  const adminCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ?').get('admin');
+  if (adminCount.count === 0) {
+    const crypto = require('crypto');
+    const adminId = 'user_admin_' + Date.now();
+    const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
+    db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
+      .run(adminId, 'admin@ticketzone.com', passwordHash, 'Administrador', 'admin');
+    console.log('✓ Usuario admin creado: admin@ticketzone.com / admin123');
   }
 
   console.log('✓ Base de datos inicializada correctamente');
@@ -285,7 +338,7 @@ const eventsRouter = createTRPCRouter({
   }),
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-    ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+    ctx.ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
     return { success: true };
   }),
 });
@@ -715,6 +768,537 @@ const settingsRouter = createTRPCRouter({
   }),
 });
 
+function generateInvitationCode() {
+  return 'INV-' + Math.random().toString(36).substr(2, 8).toUpperCase();
+}
+
+function hashPassword(password) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+function verifyPassword(password, hash) {
+  return hashPassword(password) === hash;
+}
+
+const authRouter = createTRPCRouter({
+  login: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      password: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.db.prepare(`
+        SELECT * FROM users WHERE email = ? AND is_active = 1
+      `).get(input.email.toLowerCase());
+
+      if (!user) {
+        throw new Error('Usuario no encontrado o inactivo');
+      }
+
+      if (!verifyPassword(input.password, user.password_hash)) {
+        throw new Error('Contraseña incorrecta');
+      }
+
+      return {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      };
+    }),
+
+  register: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      name: z.string().min(1),
+      role: z.enum(['admin', 'seller']).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(input.email.toLowerCase());
+      
+      if (existing) {
+        throw new Error('Este email ya está registrado');
+      }
+
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const passwordHash = hashPassword(input.password);
+
+      ctx.db.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role, is_active)
+        VALUES (?, ?, ?, ?, ?, 1)
+      `).run(userId, input.email.toLowerCase(), passwordHash, input.name, input.role || 'admin');
+
+      return {
+        success: true,
+        user: {
+          id: userId,
+          email: input.email.toLowerCase(),
+          name: input.name,
+          role: input.role || 'admin',
+        },
+      };
+    }),
+
+  registerUser: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      name: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(input.email.toLowerCase());
+      
+      if (existing) {
+        throw new Error('Este email ya está registrado');
+      }
+
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const passwordHash = hashPassword(input.password);
+
+      ctx.db.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role, is_active)
+        VALUES (?, ?, ?, ?, 'buyer', 1)
+      `).run(userId, input.email.toLowerCase(), passwordHash, input.name);
+
+      return {
+        success: true,
+        user: {
+          id: userId,
+          email: input.email.toLowerCase(),
+          name: input.name,
+          role: 'buyer',
+        },
+      };
+    }),
+
+  registerWithInvitation: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      name: z.string().min(1),
+      phone: z.string().optional(),
+      invitationCode: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const invitation = ctx.db.prepare(`
+        SELECT * FROM invitation_codes 
+        WHERE code = ? AND is_active = 1 
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+        AND (max_uses = 0 OR current_uses < max_uses)
+      `).get(input.invitationCode.toUpperCase());
+
+      if (!invitation) {
+        throw new Error('Código de invitación inválido, expirado o agotado');
+      }
+
+      const existingUser = ctx.db.prepare('SELECT id FROM users WHERE email = ?').get(input.email.toLowerCase());
+      if (existingUser) {
+        throw new Error('Este email ya está registrado');
+      }
+
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const passwordHash = hashPassword(input.password);
+
+      ctx.db.prepare(`
+        INSERT INTO users (id, email, password_hash, name, role, is_active)
+        VALUES (?, ?, ?, ?, ?, 1)
+      `).run(userId, input.email.toLowerCase(), passwordHash, input.name, invitation.type);
+
+      if (invitation.type === 'promoter') {
+        const promoterId = `promoter_${Date.now()}`;
+        ctx.db.prepare(`
+          INSERT INTO promoters (id, name, email, phone, is_active)
+          VALUES (?, ?, ?, ?, 1)
+        `).run(promoterId, input.name, input.email.toLowerCase(), input.phone || null);
+      } else if (invitation.type === 'seller') {
+        const sellerId = `seller_${Date.now()}`;
+        const sellerCode = 'RRPP-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        ctx.db.prepare(`
+          INSERT INTO sellers (id, name, email, phone, code, is_active)
+          VALUES (?, ?, ?, ?, ?, 1)
+        `).run(sellerId, input.name, input.email.toLowerCase(), input.phone || null, sellerCode);
+      }
+
+      ctx.db.prepare(`
+        UPDATE invitation_codes SET current_uses = current_uses + 1 WHERE id = ?
+      `).run(invitation.id);
+
+      return {
+        success: true,
+        user: {
+          id: userId,
+          email: input.email.toLowerCase(),
+          name: input.name,
+          role: invitation.type,
+        },
+      };
+    }),
+
+  getUsers: publicProcedure.query(({ ctx }) => {
+    const users = ctx.db.prepare(`
+      SELECT id, email, name, role, is_active, created_at FROM users ORDER BY created_at DESC
+    `).all();
+
+    return users.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      isActive: u.is_active === 1,
+      createdAt: u.created_at,
+    }));
+  }),
+
+  updateUser: publicProcedure
+    .input(z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      role: z.enum(['admin', 'seller', 'promoter', 'buyer']).optional(),
+      isActive: z.boolean().optional(),
+      password: z.string().min(6).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const updates = [];
+      const values = [];
+
+      if (input.name !== undefined) {
+        updates.push('name = ?');
+        values.push(input.name);
+      }
+      if (input.role !== undefined) {
+        updates.push('role = ?');
+        values.push(input.role);
+      }
+      if (input.isActive !== undefined) {
+        updates.push('is_active = ?');
+        values.push(input.isActive ? 1 : 0);
+      }
+      if (input.password !== undefined) {
+        updates.push('password_hash = ?');
+        values.push(hashPassword(input.password));
+      }
+
+      if (updates.length === 0) {
+        throw new Error('No hay campos para actualizar');
+      }
+
+      values.push(input.id);
+      ctx.db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+      return { success: true };
+    }),
+
+  deleteUser: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      ctx.db.prepare('DELETE FROM users WHERE id = ?').run(input.id);
+      return { success: true };
+    }),
+
+  getProfile: publicProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(({ ctx, input }) => {
+      const user = ctx.db.prepare(`
+        SELECT id, email, name, role, is_active, created_at FROM users WHERE id = ?
+      `).get(input.userId);
+
+      if (!user) return null;
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        isActive: user.is_active === 1,
+        createdAt: user.created_at,
+      };
+    }),
+
+  createInvitationCode: publicProcedure
+    .input(z.object({
+      type: z.enum(['promoter', 'seller']),
+      maxUses: z.number().min(0).default(1),
+      expiresInDays: z.number().min(0).optional(),
+      createdBy: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const id = `inv_${Date.now()}`;
+      const code = generateInvitationCode();
+      const expiresAt = input.expiresInDays 
+        ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+      ctx.db.prepare(`
+        INSERT INTO invitation_codes (id, code, type, max_uses, expires_at, created_by, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+      `).run(id, code, input.type, input.maxUses, expiresAt, input.createdBy);
+
+      return { success: true, code, id };
+    }),
+
+  getInvitationCodes: publicProcedure.query(({ ctx }) => {
+    const codes = ctx.db.prepare(`
+      SELECT ic.*, u.name as created_by_name 
+      FROM invitation_codes ic
+      LEFT JOIN users u ON ic.created_by = u.id
+      ORDER BY ic.created_at DESC
+    `).all();
+
+    return codes.map(c => ({
+      id: c.id,
+      code: c.code,
+      type: c.type,
+      maxUses: c.max_uses,
+      currentUses: c.current_uses,
+      expiresAt: c.expires_at,
+      createdBy: c.created_by_name || 'Sistema',
+      isActive: c.is_active === 1,
+      createdAt: c.created_at,
+    }));
+  }),
+
+  deleteInvitationCode: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      ctx.db.prepare('DELETE FROM invitation_codes WHERE id = ?').run(input.id);
+      return { success: true };
+    }),
+
+  toggleInvitationCode: publicProcedure
+    .input(z.object({ id: z.string(), isActive: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      ctx.db.prepare('UPDATE invitation_codes SET is_active = ? WHERE id = ?').run(input.isActive ? 1 : 0, input.id);
+      return { success: true };
+    }),
+
+  validateInvitationCode: publicProcedure
+    .input(z.object({ code: z.string() }))
+    .query(({ ctx, input }) => {
+      const invitation = ctx.db.prepare(`
+        SELECT type FROM invitation_codes 
+        WHERE code = ? AND is_active = 1 
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+        AND (max_uses = 0 OR current_uses < max_uses)
+      `).get(input.code.toUpperCase());
+
+      return {
+        valid: !!invitation,
+        type: invitation?.type || null,
+      };
+    }),
+
+  updateProfile: publicProcedure
+    .input(z.object({
+      userId: z.string(),
+      name: z.string().optional(),
+      phone: z.string().optional(),
+      currentPassword: z.string().optional(),
+      newPassword: z.string().min(6).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.db.prepare('SELECT * FROM users WHERE id = ?').get(input.userId);
+      if (!user) throw new Error('Usuario no encontrado');
+
+      if (input.newPassword) {
+        if (!input.currentPassword) {
+          throw new Error('Debes proporcionar la contraseña actual');
+        }
+        if (!verifyPassword(input.currentPassword, user.password_hash)) {
+          throw new Error('Contraseña actual incorrecta');
+        }
+      }
+
+      const updates = [];
+      const values = [];
+
+      if (input.name !== undefined) {
+        updates.push('name = ?');
+        values.push(input.name);
+      }
+      if (input.newPassword) {
+        updates.push('password_hash = ?');
+        values.push(hashPassword(input.newPassword));
+      }
+
+      if (updates.length > 0) {
+        values.push(input.userId);
+        ctx.db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      }
+
+      return { success: true };
+    }),
+});
+
+const subscriptionsRouter = createTRPCRouter({
+  getPlans: publicProcedure.query(({ ctx }) => {
+    const plans = ctx.db.prepare('SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY max_events ASC').all();
+    return plans.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      maxEvents: p.max_events,
+      description: p.description,
+      features: p.features ? JSON.parse(p.features) : [],
+      isActive: p.is_active === 1,
+    }));
+  }),
+
+  getAllPlans: publicProcedure.query(({ ctx }) => {
+    const plans = ctx.db.prepare('SELECT * FROM subscription_plans ORDER BY max_events ASC').all();
+    return plans.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      maxEvents: p.max_events,
+      description: p.description,
+      features: p.features ? JSON.parse(p.features) : [],
+      isActive: p.is_active === 1,
+    }));
+  }),
+
+  createPlan: publicProcedure
+    .input(z.object({
+      name: z.string(),
+      price: z.number().min(0),
+      maxEvents: z.number().min(1),
+      description: z.string().optional(),
+      features: z.array(z.string()).optional(),
+    }))
+    .mutation(({ ctx, input }) => {
+      const id = `plan_${Date.now()}`;
+      ctx.db.prepare(`
+        INSERT INTO subscription_plans (id, name, price, max_events, description, features, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+      `).run(id, input.name, input.price, input.maxEvents, input.description || '', JSON.stringify(input.features || []));
+      return { id, success: true };
+    }),
+
+  updatePlan: publicProcedure
+    .input(z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      price: z.number().min(0).optional(),
+      maxEvents: z.number().min(1).optional(),
+      description: z.string().optional(),
+      features: z.array(z.string()).optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(({ ctx, input }) => {
+      const updates = [];
+      const values = [];
+
+      if (input.name !== undefined) { updates.push('name = ?'); values.push(input.name); }
+      if (input.price !== undefined) { updates.push('price = ?'); values.push(input.price); }
+      if (input.maxEvents !== undefined) { updates.push('max_events = ?'); values.push(input.maxEvents); }
+      if (input.description !== undefined) { updates.push('description = ?'); values.push(input.description); }
+      if (input.features !== undefined) { updates.push('features = ?'); values.push(JSON.stringify(input.features)); }
+      if (input.isActive !== undefined) { updates.push('is_active = ?'); values.push(input.isActive ? 1 : 0); }
+
+      if (updates.length > 0) {
+        values.push(input.id);
+        ctx.db.prepare(`UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      }
+      return { success: true };
+    }),
+
+  deletePlan: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => {
+      ctx.db.prepare('DELETE FROM subscription_plans WHERE id = ?').run(input.id);
+      return { success: true };
+    }),
+
+  getPromoterSubscription: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(({ ctx, input }) => {
+      const sub = ctx.db.prepare(`
+        SELECT ps.*, sp.name as plan_name, sp.price as plan_price, sp.max_events
+        FROM promoter_subscriptions ps
+        JOIN subscription_plans sp ON ps.plan_id = sp.id
+        WHERE ps.promoter_id = ? AND ps.status = 'active'
+        ORDER BY ps.created_at DESC LIMIT 1
+      `).get(input.promoterId);
+      
+      if (!sub) return null;
+      
+      const eventsThisMonth = ctx.db.prepare(`
+        SELECT COUNT(*) as count FROM events 
+        WHERE promoter_id = ? AND created_at >= date('now', 'start of month')
+      `).get(input.promoterId);
+
+      return {
+        id: sub.id,
+        planId: sub.plan_id,
+        planName: sub.plan_name,
+        planPrice: sub.plan_price,
+        maxEvents: sub.max_events,
+        status: sub.status,
+        currentPeriodStart: sub.current_period_start,
+        currentPeriodEnd: sub.current_period_end,
+        eventsUsed: eventsThisMonth?.count || 0,
+      };
+    }),
+
+  subscribe: publicProcedure
+    .input(z.object({
+      promoterId: z.string(),
+      planId: z.string(),
+    }))
+    .mutation(({ ctx, input }) => {
+      const plan = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ? AND is_active = 1').get(input.planId);
+      if (!plan) throw new Error('Plan no encontrado');
+
+      ctx.db.prepare(`UPDATE promoter_subscriptions SET status = 'cancelled' WHERE promoter_id = ? AND status = 'active'`).run(input.promoterId);
+
+      const id = `sub_${Date.now()}`;
+      const now = new Date();
+      const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+
+      ctx.db.prepare(`
+        INSERT INTO promoter_subscriptions (id, promoter_id, plan_id, status, current_period_start, current_period_end)
+        VALUES (?, ?, ?, 'active', ?, ?)
+      `).run(id, input.promoterId, input.planId, now.toISOString(), periodEnd.toISOString());
+
+      return { id, success: true };
+    }),
+
+  cancelSubscription: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .mutation(({ ctx, input }) => {
+      ctx.db.prepare(`UPDATE promoter_subscriptions SET status = 'cancelled' WHERE promoter_id = ? AND status = 'active'`).run(input.promoterId);
+      return { success: true };
+    }),
+
+  canCreateEvent: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(({ ctx, input }) => {
+      const sub = ctx.db.prepare(`
+        SELECT ps.*, sp.max_events
+        FROM promoter_subscriptions ps
+        JOIN subscription_plans sp ON ps.plan_id = sp.id
+        WHERE ps.promoter_id = ? AND ps.status = 'active'
+      `).get(input.promoterId);
+
+      if (!sub) return { canCreate: false, reason: 'No tienes una suscripción activa' };
+
+      const eventsThisMonth = ctx.db.prepare(`
+        SELECT COUNT(*) as count FROM events 
+        WHERE promoter_id = ? AND created_at >= date('now', 'start of month')
+      `).get(input.promoterId);
+
+      if (eventsThisMonth.count >= sub.max_events) {
+        return { canCreate: false, reason: `Has alcanzado el límite de ${sub.max_events} eventos este mes` };
+      }
+
+      return { canCreate: true, eventsRemaining: sub.max_events - eventsThisMonth.count };
+    }),
+});
+
 const appRouter = createTRPCRouter({
   events: eventsRouter,
   tickets: ticketsRouter,
@@ -723,12 +1307,15 @@ const appRouter = createTRPCRouter({
   payments: paymentsRouter,
   stats: statsRouter,
   settings: settingsRouter,
+  auth: authRouter,
+  subscriptions: subscriptionsRouter,
 });
 
 const app = new Hono();
 app.use('*', cors());
-app.use('/trpc/*', trpcServer({ endpoint: '/trpc', router: appRouter, createContext }));
+app.use('/api/trpc/*', trpcServer({ endpoint: '/api/trpc', router: appRouter, createContext }));
 app.get('/', (c) => c.json({ status: 'ok', message: 'TicketZone API', version: '1.0.0' }));
+app.get('/api/health', (c) => c.json({ status: 'healthy', timestamp: new Date().toISOString() }));
 app.get('/health', (c) => c.json({ status: 'healthy', timestamp: new Date().toISOString() }));
 
 const port = parseInt(process.env.PORT || '3001', 10);
@@ -739,6 +1326,6 @@ console.log('╚═════════════════════�
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`✓ Servidor en http://localhost:${info.port}`);
-  console.log(`✓ API tRPC en http://localhost:${info.port}/trpc`);
-  console.log(`✓ Health check en http://localhost:${info.port}/health`);
+  console.log(`✓ API tRPC en http://localhost:${info.port}/api/trpc`);
+  console.log(`✓ Health check en http://localhost:${info.port}/api/health`);
 });

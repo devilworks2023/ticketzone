@@ -64,7 +64,7 @@ export default function LoginScreen() {
             <View style={styles.logoCircle}>
               <Ticket color={Colors.dark.primary} size={48} />
             </View>
-            <Text style={styles.title}>Ticketera</Text>
+            <Text style={styles.title}>TicketZone</Text>
             <Text style={styles.subtitle}>Panel de Gestión</Text>
           </View>
 

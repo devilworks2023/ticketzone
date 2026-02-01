@@ -1,13 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, Ticket, Euro, Clock, ChevronRight, CreditCard, Package } from 'lucide-react-native';
+import { TrendingUp, Ticket, Euro, Clock, ChevronRight, CreditCard, Shield } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { isAdmin } = useAuth();
   
   const eventsQuery = trpc.events.list.useQuery();
   const statsQuery = trpc.stats.dashboard.useQuery();
@@ -65,16 +67,26 @@ export default function DashboardScreen() {
             <Text style={styles.statLabelSmall}>Entradas vendidas</Text>
           </View>
 
-          <TouchableOpacity 
-            style={[styles.statCard, styles.statCardSmall]}
-            onPress={() => router.push('/admin/subscriptions')}
-          >
-            <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + '20' }]}>
-              <CreditCard color={Colors.dark.success} size={20} />
+          {isAdmin() ? (
+            <TouchableOpacity 
+              style={[styles.statCard, styles.statCardSmall]}
+              onPress={() => router.push('/admin')}
+            >
+              <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.primary + '20' }]}>
+                <Shield color={Colors.dark.primary} size={20} />
+              </View>
+              <Text style={styles.statValueSmall}>Admin</Text>
+              <Text style={styles.statLabelSmall}>Panel de control</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.statCard, styles.statCardSmall]}>
+              <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + '20' }]}>
+                <CreditCard color={Colors.dark.success} size={20} />
+              </View>
+              <Text style={styles.statValueSmall}>{formatCurrency(stats.todayRevenue)}</Text>
+              <Text style={styles.statLabelSmall}>Hoy</Text>
             </View>
-            <Text style={styles.statValueSmall}>Suscripciones</Text>
-            <Text style={styles.statLabelSmall}>Gestionar planes</Text>
-          </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.statRow}>

@@ -190,4 +190,13 @@ export const eventsRouter = createTRPCRouter({
       ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
       return { success: true };
     }),
+
+  toggleActive: publicProcedure
+    .input(z.object({ id: z.string(), isActive: z.boolean() }))
+    .mutation(({ ctx, input }) => {
+      ctx.db.prepare(`
+        UPDATE events SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).run(input.isActive ? 1 : 0, input.id);
+      return { success: true };
+    }),
 });

@@ -211,6 +211,39 @@ export const ticketsRouter = createTRPCRouter({
       };
     }),
 
+  listAll: publicProcedure
+    .query(({ ctx }) => {
+      const tickets = ctx.db.prepare(`
+        SELECT t.*, e.name as event_name, tt.name as tier_name, s.name as seller_name
+        FROM tickets t
+        JOIN events e ON t.event_id = e.id
+        JOIN ticket_tiers tt ON t.tier_id = tt.id
+        LEFT JOIN sellers s ON t.seller_id = s.id
+        ORDER BY t.purchase_date DESC
+        LIMIT 500
+      `).all() as any[];
+
+      return tickets.map(t => ({
+        id: t.id,
+        eventId: t.event_id,
+        eventName: t.event_name,
+        tierId: t.tier_id,
+        tierName: t.tier_name,
+        buyerName: t.buyer_name,
+        buyerEmail: t.buyer_email,
+        buyerPhone: t.buyer_phone,
+        qrCode: t.qr_code,
+        purchaseDate: t.purchase_date,
+        sellerId: t.seller_id,
+        sellerName: t.seller_name,
+        sellerCode: t.seller_code,
+        isUsed: Boolean(t.is_used),
+        usedAt: t.used_at,
+        paymentMethod: t.payment_method,
+        price: t.price,
+      }));
+    }),
+
   getByEmail: publicProcedure
     .input(z.object({ email: z.string() }))
     .query(({ ctx, input }) => {

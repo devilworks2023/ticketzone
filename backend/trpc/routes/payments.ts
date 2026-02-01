@@ -262,4 +262,27 @@ export const paymentsRouter = createTRPCRouter({
         throw new Error(`Error al verificar estado de cuenta: ${error.message}`);
       }
     }),
+
+  listPayouts: publicProcedure
+    .query(({ ctx }) => {
+      const payouts = ctx.db.prepare(`
+        SELECT pp.*, p.name as promoter_name, p.email as promoter_email
+        FROM promoter_payouts pp
+        JOIN promoters p ON pp.promoter_id = p.id
+        ORDER BY pp.created_at DESC
+        LIMIT 100
+      `).all() as any[];
+
+      return payouts.map(p => ({
+        id: p.id,
+        promoterId: p.promoter_id,
+        promoterName: p.promoter_name,
+        promoterEmail: p.promoter_email,
+        amount: p.amount,
+        stripeTransferId: p.stripe_transfer_id,
+        status: p.status,
+        createdAt: p.created_at,
+        completedAt: p.completed_at,
+      }));
+    }),
 });

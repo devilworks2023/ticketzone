@@ -225,15 +225,23 @@ function initializeDatabase(db: Database.Database) {
     console.log('Default subscription plans created');
   }
 
-  const adminCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-  if (adminCount.count === 0) {
-    const crypto = require('crypto');
-    const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
+  const crypto = require('crypto');
+  const adminPasswordHash = crypto.createHash('sha256').update('admin123').digest('hex');
+  
+  const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('devilworks2023@gmail.com') as any;
+  
+  if (!existingAdmin) {
     db.prepare(`
       INSERT INTO users (id, email, password_hash, name, role, is_active)
       VALUES (?, ?, ?, ?, ?, 1)
-    `).run('admin-1', 'devilworks2023@gmail.com', passwordHash, 'Administrador', 'admin');
-    console.log('Default admin user created: devilworks2023@gmail.com / admin123');
+    `).run('admin-1', 'devilworks2023@gmail.com', adminPasswordHash, 'Administrador', 'admin');
+    console.log('Admin user created: devilworks2023@gmail.com / admin123');
+  } else {
+    db.prepare(`
+      UPDATE users SET password_hash = ?, name = ?, role = 'admin', is_active = 1 
+      WHERE email = ?
+    `).run(adminPasswordHash, 'Administrador', 'devilworks2023@gmail.com');
+    console.log('Admin user credentials updated: devilworks2023@gmail.com / admin123');
   }
 }
 

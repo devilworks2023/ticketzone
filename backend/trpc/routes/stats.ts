@@ -98,6 +98,30 @@ export const statsRouter = createTRPCRouter({
     };
   }),
 
+  getDashboardStats: publicProcedure.query(({ ctx }) => {
+    const totalStats = ctx.db.prepare(`
+      SELECT 
+        COUNT(*) as total_tickets,
+        COALESCE(SUM(price), 0) as total_revenue
+      FROM tickets
+    `).get() as any;
+
+    const eventStats = ctx.db.prepare(`
+      SELECT COUNT(*) as total_events FROM events
+    `).get() as any;
+
+    const activeEvents = ctx.db.prepare(`
+      SELECT COUNT(*) as active_events FROM events WHERE is_active = 1
+    `).get() as any;
+
+    return {
+      totalRevenue: totalStats.total_revenue,
+      totalTicketsSold: totalStats.total_tickets,
+      totalEvents: eventStats.total_events,
+      activeEvents: activeEvents.active_events,
+    };
+  }),
+
   eventStats: publicProcedure
     .input(z.object({ eventId: z.string() }))
     .query(({ ctx, input }) => {

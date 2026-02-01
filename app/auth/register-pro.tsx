@@ -174,6 +174,8 @@ export default function RegisterProScreen() {
                   onChangeText={(text) => setInvitationCode(text.toUpperCase())}
                   autoCapitalize="characters"
                   autoCorrect={false}
+                  nativeID="pro-invitation-code"
+                  autoComplete="off"
                 />
                 {validateCodeQuery.isLoading ? (
                   <ActivityIndicator size="small" color={Colors.dark.primary} />
@@ -206,6 +208,9 @@ export default function RegisterProScreen() {
                   value={name}
                   onChangeText={setName}
                   autoCapitalize="words"
+                  nativeID="pro-name"
+                  autoComplete="name"
+                  textContentType="name"
                 />
               </View>
 
@@ -220,6 +225,9 @@ export default function RegisterProScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  nativeID="pro-email"
+                  autoComplete="email"
+                  textContentType="emailAddress"
                 />
               </View>
 
@@ -232,6 +240,9 @@ export default function RegisterProScreen() {
                   value={phone}
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
+                  nativeID="pro-phone"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
                 />
               </View>
 
@@ -244,6 +255,9 @@ export default function RegisterProScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
+                  nativeID="pro-password"
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                   {showPassword ? (
@@ -263,6 +277,9 @@ export default function RegisterProScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showPassword}
+                  nativeID="pro-confirm-password"
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                 />
               </View>
 

@@ -54,11 +54,19 @@ export default function RegisterScreen() {
       });
 
       if (result.success) {
-        Alert.alert(
-          'Registro Exitoso',
-          'Tu cuenta ha sido creada. Ahora puedes iniciar sesión.',
-          [{ text: 'Iniciar Sesión', onPress: () => router.replace('/auth/login') }]
-        );
+        const res = result as any;
+        if (res.requiresVerification) {
+          router.replace({
+            pathname: '/auth/verify-email',
+            params: { email: res.email },
+          });
+        } else {
+          Alert.alert(
+            'Registro Exitoso',
+            'Tu cuenta ha sido creada. Ahora puedes iniciar sesión.',
+            [{ text: 'Iniciar Sesión', onPress: () => router.replace('/auth/login') }]
+          );
+        }
       }
     } catch (error: any) {
       console.log('Register error:', error);

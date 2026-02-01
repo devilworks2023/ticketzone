@@ -219,16 +219,31 @@ function initializeDatabase(db) {
     insertPlan.run('plan_enterprise', 'Empresarial', 99.99, 999, 'Sin límites', JSON.stringify(['Eventos ilimitados', 'Soporte 24/7', 'API access', 'Personalización']));
   }
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      type TEXT NOT NULL,
+      user_data TEXT,
+      expires_at TEXT NOT NULL,
+      verified INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(email);
+    CREATE INDEX IF NOT EXISTS idx_email_verifications_code ON email_verifications(code);
+  `);
+
   const adminCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE role = ?').get('admin');
   if (adminCount.count === 0) {
     const crypto = require('crypto');
     const adminId = 'user_admin_' + Date.now();
     const passwordHash = crypto.createHash('sha256').update('admin123').digest('hex');
     db.prepare('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
-      .run(adminId, 'admin@ticketzone.com', passwordHash, 'Administrador', 'admin');
+      .run(adminId, 'devilworks2023@gmail.com', passwordHash, 'Administrador', 'admin');
     console.log('╔═══════════════════════════════════════════╗');
     console.log('║  ADMIN CREADO:                            ║');
-    console.log('║  Email: admin@ticketzone.com              ║');
+    console.log('║  Email: devilworks2023@gmail.com          ║');
     console.log('║  Password: admin123                       ║');
     console.log('╚═══════════════════════════════════════════╝');
   }
@@ -776,6 +791,10 @@ function generateInvitationCode() {
   return 'INV-' + Math.random().toString(36).substr(2, 8).toUpperCase();
 }
 
+function generateVerificationCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 function hashPassword(password) {
   const crypto = require('crypto');
   return crypto.createHash('sha256').update(password).digest('hex');
@@ -861,22 +880,173 @@ const authRouter = createTRPCRouter({
         throw new Error('Este email ya está registrado');
       }
 
-      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const passwordHash = hashPassword(input.password);
+      ctx.db.prepare('DELETE FROM email_verifications WHERE email = ? AND verified = 0').run(input.email.toLowerCase());
+
+      const verificationId = `ver_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const userData = JSON.stringify({
+        email: input.email.toLowerCase(),
+        password: input.password,
+        name: input.name,
+        role: 'buyer',
+      });
 
       ctx.db.prepare(`
-        INSERT INTO users (id, email, password_hash, name, role, is_active)
-        VALUES (?, ?, ?, ?, 'buyer', 1)
-      `).run(userId, input.email.toLowerCase(), passwordHash, input.name);
+        INSERT INTO email_verifications (id, email, code, type, user_data, expires_at)
+        VALUES (?, ?, ?, 'user', ?, ?)
+      `).run(verificationId, input.email.toLowerCase(), verificationCode, userData, expiresAt);
+
+      console.log('╔═══════════════════════════════════════════╗');
+      console.log('║  CÓDIGO DE VERIFICACIÓN                   ║');
+      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
+      console.log(`║  Código: ${verificationCode}                            ║`);
+      console.log('╚═══════════════════════════════════════════╝');
 
       return {
         success: true,
-        user: {
-          id: userId,
-          email: input.email.toLowerCase(),
-          name: input.name,
-          role: 'buyer',
-        },
+        requiresVerification: true,
+        email: input.email.toLowerCase(),
+        message: 'Se ha enviado un código de verificación a tu email',
+      };
+    }),
+
+  verifyEmail: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      code: z.string().length(6),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const verification = ctx.db.prepare(`
+        SELECT * FROM email_verifications 
+        WHERE email = ? AND code = ? AND verified = 0 AND expires_at > datetime('now')
+        ORDER BY created_at DESC LIMIT 1
+      `).get(input.email.toLowerCase(), input.code);
+
+      if (!verification) {
+        throw new Error('Código de verificación inválido o expirado');
+      }
+
+      const userData = JSON.parse(verification.user_data);
+
+      if (verification.type === 'user' || verification.type === 'buyer') {
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const passwordHash = hashPassword(userData.password);
+
+        ctx.db.prepare(`
+          INSERT INTO users (id, email, password_hash, name, role, is_active)
+          VALUES (?, ?, ?, ?, ?, 1)
+        `).run(userId, userData.email, passwordHash, userData.name, userData.role || 'buyer');
+
+        ctx.db.prepare('UPDATE email_verifications SET verified = 1 WHERE id = ?').run(verification.id);
+
+        return {
+          success: true,
+          user: {
+            id: userId,
+            email: userData.email,
+            name: userData.name,
+            role: userData.role || 'buyer',
+          },
+        };
+      } else if (verification.type === 'promoter') {
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const passwordHash = hashPassword(userData.password);
+
+        ctx.db.prepare(`
+          INSERT INTO users (id, email, password_hash, name, role, is_active)
+          VALUES (?, ?, ?, ?, 'promoter', 1)
+        `).run(userId, userData.email, passwordHash, userData.name);
+
+        const promoterId = `promoter_${Date.now()}`;
+        ctx.db.prepare(`
+          INSERT INTO promoters (id, name, email, phone, is_active)
+          VALUES (?, ?, ?, ?, 1)
+        `).run(promoterId, userData.name, userData.email, userData.phone || null);
+
+        if (userData.invitationId) {
+          ctx.db.prepare('UPDATE invitation_codes SET current_uses = current_uses + 1 WHERE id = ?').run(userData.invitationId);
+        }
+
+        ctx.db.prepare('UPDATE email_verifications SET verified = 1 WHERE id = ?').run(verification.id);
+
+        return {
+          success: true,
+          user: {
+            id: userId,
+            email: userData.email,
+            name: userData.name,
+            role: 'promoter',
+          },
+        };
+      } else if (verification.type === 'seller') {
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const passwordHash = hashPassword(userData.password);
+
+        ctx.db.prepare(`
+          INSERT INTO users (id, email, password_hash, name, role, is_active)
+          VALUES (?, ?, ?, ?, 'seller', 1)
+        `).run(userId, userData.email, passwordHash, userData.name);
+
+        const sellerId = `seller_${Date.now()}`;
+        const sellerCode = 'RRPP-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        ctx.db.prepare(`
+          INSERT INTO sellers (id, name, email, phone, code, is_active)
+          VALUES (?, ?, ?, ?, ?, 1)
+        `).run(sellerId, userData.name, userData.email, userData.phone || null, sellerCode);
+
+        if (userData.invitationId) {
+          ctx.db.prepare('UPDATE invitation_codes SET current_uses = current_uses + 1 WHERE id = ?').run(userData.invitationId);
+        }
+
+        ctx.db.prepare('UPDATE email_verifications SET verified = 1 WHERE id = ?').run(verification.id);
+
+        return {
+          success: true,
+          user: {
+            id: userId,
+            email: userData.email,
+            name: userData.name,
+            role: 'seller',
+          },
+          sellerCode,
+        };
+      }
+
+      throw new Error('Tipo de verificación no válido');
+    }),
+
+  resendVerificationCode: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existingVerification = ctx.db.prepare(`
+        SELECT * FROM email_verifications 
+        WHERE email = ? AND verified = 0
+        ORDER BY created_at DESC LIMIT 1
+      `).get(input.email.toLowerCase());
+
+      if (!existingVerification) {
+        throw new Error('No hay verificación pendiente para este email');
+      }
+
+      const newCode = generateVerificationCode();
+      const newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+      ctx.db.prepare(`
+        UPDATE email_verifications SET code = ?, expires_at = ? WHERE id = ?
+      `).run(newCode, newExpiresAt, existingVerification.id);
+
+      console.log('╔═══════════════════════════════════════════╗');
+      console.log('║  CÓDIGO DE VERIFICACIÓN REENVIADO         ║');
+      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
+      console.log(`║  Código: ${newCode}                            ║`);
+      console.log('╚═══════════════════════════════════════════╝');
+
+      return {
+        success: true,
+        message: 'Se ha reenviado el código de verificación',
       };
     }),
 
@@ -905,41 +1075,37 @@ const authRouter = createTRPCRouter({
         throw new Error('Este email ya está registrado');
       }
 
-      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const passwordHash = hashPassword(input.password);
+      ctx.db.prepare('DELETE FROM email_verifications WHERE email = ? AND verified = 0').run(input.email.toLowerCase());
+
+      const verificationId = `ver_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const verificationCode = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const userData = JSON.stringify({
+        email: input.email.toLowerCase(),
+        password: input.password,
+        name: input.name,
+        phone: input.phone || null,
+        invitationId: invitation.id,
+      });
 
       ctx.db.prepare(`
-        INSERT INTO users (id, email, password_hash, name, role, is_active)
-        VALUES (?, ?, ?, ?, ?, 1)
-      `).run(userId, input.email.toLowerCase(), passwordHash, input.name, invitation.type);
+        INSERT INTO email_verifications (id, email, code, type, user_data, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(verificationId, input.email.toLowerCase(), verificationCode, invitation.type, userData, expiresAt);
 
-      if (invitation.type === 'promoter') {
-        const promoterId = `promoter_${Date.now()}`;
-        ctx.db.prepare(`
-          INSERT INTO promoters (id, name, email, phone, is_active)
-          VALUES (?, ?, ?, ?, 1)
-        `).run(promoterId, input.name, input.email.toLowerCase(), input.phone || null);
-      } else if (invitation.type === 'seller') {
-        const sellerId = `seller_${Date.now()}`;
-        const sellerCode = 'RRPP-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-        ctx.db.prepare(`
-          INSERT INTO sellers (id, name, email, phone, code, is_active)
-          VALUES (?, ?, ?, ?, ?, 1)
-        `).run(sellerId, input.name, input.email.toLowerCase(), input.phone || null, sellerCode);
-      }
-
-      ctx.db.prepare(`
-        UPDATE invitation_codes SET current_uses = current_uses + 1 WHERE id = ?
-      `).run(invitation.id);
+      console.log('╔═══════════════════════════════════════════╗');
+      console.log('║  CÓDIGO DE VERIFICACIÓN (PRO)             ║');
+      console.log(`║  Email: ${input.email.toLowerCase().padEnd(32)}║`);
+      console.log(`║  Código: ${verificationCode}                            ║`);
+      console.log(`║  Tipo: ${invitation.type.padEnd(34)}║`);
+      console.log('╚═══════════════════════════════════════════╝');
 
       return {
         success: true,
-        user: {
-          id: userId,
-          email: input.email.toLowerCase(),
-          name: input.name,
-          role: invitation.type,
-        },
+        requiresVerification: true,
+        email: input.email.toLowerCase(),
+        type: invitation.type,
+        message: 'Se ha enviado un código de verificación a tu email',
       };
     }),
 

@@ -98,12 +98,20 @@ export default function RegisterProScreen() {
       });
 
       if (result.success) {
-        const roleText = codeType === 'promoter' ? 'promotor' : 'vendedor';
-        Alert.alert(
-          'Registro Exitoso',
-          `Tu cuenta de ${roleText} ha sido creada. Ahora puedes iniciar sesión.`,
-          [{ text: 'Iniciar Sesión', onPress: () => router.replace('/auth/login') }]
-        );
+        const res = result as any;
+        if (res.requiresVerification) {
+          router.replace({
+            pathname: '/auth/verify-email',
+            params: { email: res.email, type: res.type || codeType },
+          });
+        } else {
+          const roleText = codeType === 'promoter' ? 'promotor' : 'vendedor';
+          Alert.alert(
+            'Registro Exitoso',
+            `Tu cuenta de ${roleText} ha sido creada. Ahora puedes iniciar sesión.`,
+            [{ text: 'Iniciar Sesión', onPress: () => router.replace('/auth/login') }]
+          );
+        }
       }
     } catch (error: any) {
       console.log('Register error:', error);

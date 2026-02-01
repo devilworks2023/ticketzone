@@ -250,17 +250,49 @@ function initializeDatabase(db) {
 
   // Siempre mostrar los admins existentes al iniciar
   const admins = db.prepare('SELECT email, name, is_active FROM users WHERE role = ?').all('admin');
-  console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║  ADMINISTRADORES EN EL SISTEMA:                       ║');
-  console.log('╠═══════════════════════════════════════════════════════╣');
-  admins.forEach(admin => {
-    const status = admin.is_active ? '✓ Activo' : '✗ Inactivo';
-    console.log(`║  ${admin.email.padEnd(35)} ${status.padEnd(12)} ║`);
-  });
-  console.log('╠═══════════════════════════════════════════════════════╣');
-  console.log('║  Password por defecto: admin123                       ║');
-  console.log('║  (Cámbiala después de iniciar sesión)                 ║');
-  console.log('╚═══════════════════════════════════════════════════════╝');
+  console.log('');
+  console.log('='.repeat(60));
+  console.log('='.repeat(60));
+  console.log('   ESTADO DE LA BASE DE DATOS');
+  console.log('='.repeat(60));
+  console.log('');
+  console.log('>>> ADMINISTRADORES:');
+  if (admins.length === 0) {
+    console.log('   (No hay administradores)');
+  } else {
+    admins.forEach(admin => {
+      const status = admin.is_active ? 'ACTIVO' : 'INACTIVO';
+      console.log(`   - Email: ${admin.email}`);
+      console.log(`     Nombre: ${admin.name}`);
+      console.log(`     Estado: ${status}`);
+    });
+  }
+  console.log('');
+  console.log('>>> CREDENCIALES POR DEFECTO:');
+  console.log('   Email: devilworks2023@gmail.com');
+  console.log('   Password: admin123');
+  console.log('');
+  
+  // Mostrar todos los usuarios
+  const allUsers = db.prepare('SELECT id, email, name, role, is_active, email_verified FROM users').all();
+  console.log('>>> TODOS LOS USUARIOS EN LA BASE DE DATOS:');
+  if (allUsers.length === 0) {
+    console.log('   (No hay usuarios)');
+  } else {
+    console.log(`   Total: ${allUsers.length} usuarios`);
+    allUsers.forEach((user, index) => {
+      console.log(`   [${index + 1}] ${user.email}`);
+      console.log(`       ID: ${user.id}`);
+      console.log(`       Nombre: ${user.name}`);
+      console.log(`       Rol: ${user.role}`);
+      console.log(`       Activo: ${user.is_active ? 'SI' : 'NO'}`);
+      console.log(`       Email verificado: ${user.email_verified ? 'SI' : 'NO'}`);
+    });
+  }
+  console.log('');
+  console.log('='.repeat(60));
+  console.log('='.repeat(60));
+  console.log('');
 
   console.log('✓ Base de datos inicializada correctamente');
 }

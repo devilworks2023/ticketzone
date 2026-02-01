@@ -1,12 +1,35 @@
 import { Tabs, router } from "expo-router";
-import { LayoutDashboard, Calendar, Users, ScanLine, Settings, Building2 } from "lucide-react-native";
+import { LayoutDashboard, Calendar, Users, ScanLine, Settings, Building2, LogOut } from "lucide-react-native";
 import React from "react";
-import { Platform, TouchableOpacity } from "react-native";
+import { Platform, TouchableOpacity, View, Alert } from "react-native";
 import Colors from "@/constants/colors";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function TabLayout() {
+  const { logout } = useAuth();
+
   const handleOpenSettings = () => {
     router.push('/account/settings');
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro que deseas salir?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Salir',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('Logging out...');
+            await logout();
+            console.log('Logged out, navigating to home...');
+            router.replace('/');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -33,12 +56,20 @@ export default function TabLayout() {
           fontWeight: '700',
         },
         headerRight: () => (
-          <TouchableOpacity 
-            onPress={handleOpenSettings}
-            style={{ marginRight: 16, padding: 8 }}
-          >
-            <Settings color={Colors.dark.textMuted} size={20} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
+            <TouchableOpacity 
+              onPress={handleOpenSettings}
+              style={{ padding: 8 }}
+            >
+              <Settings color={Colors.dark.textMuted} size={20} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={handleLogout}
+              style={{ padding: 8 }}
+            >
+              <LogOut color={Colors.dark.error} size={20} />
+            </TouchableOpacity>
+          </View>
         ),
       }}
     >

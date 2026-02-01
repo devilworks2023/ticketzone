@@ -1,153 +1,205 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Event, Seller, Ticket, SalesStats } from '@/types';
-import { mockEvents, mockSellers, mockTickets, defaultCommissionTiers } from '@/mocks/data';
-
-const STORAGE_KEYS = {
-  EVENTS: 'ticketera_events',
-  SELLERS: 'ticketera_sellers',
-  TICKETS: 'ticketera_tickets',
-};
+import { trpc } from '@/lib/trpc';
+import { defaultCommissionTiers } from '@/mocks/data';
 
 export const [AppProvider, useApp] = createContextHook(() => {
-  const [events, setEvents] = useState<Event[]>(mockEvents);
-  const [sellers, setSellers] = useState<Seller[]>(mockSellers);
-  const [tickets, setTickets] = useState<Ticket[]>(mockTickets);
-  const [isLoading, setIsLoading] = useState(true);
+  const eventsQuery = trpc.events.list.useQuery();
+  const sellersQuery = trpc.sellers.list.useQuery();
+  const ticketsQuery = trpc.tickets.list.useQuery();
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const createEventMutation = trpc.events.create.useMutation();
+  const updateEventMutation = trpc.events.update.useMutation();
+  const deleteEventMutation = trpc.events.delete.useMutation();
+  
+  const createSellerMutation = trpc.sellers.create.useMutation();
+  const updateSellerMutation = trpc.sellers.update.useMutation();
+  const deleteSellerMutation = trpc.sellers.delete.useMutation();
+  
+  const createTicketMutation = trpc.tickets.create.useMutation();
+  const validateTicketMutation = trpc.tickets.validate.useMutation();
 
-  const loadData = async () => {
-    try {
-      const [eventsData, sellersData, ticketsData] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.EVENTS),
-        AsyncStorage.getItem(STORAGE_KEYS.SELLERS),
-        AsyncStorage.getItem(STORAGE_KEYS.TICKETS),
-      ]);
+  const events: Event[] = (eventsQuery.data || []).map(e => ({
+    ...e,
+    ticketTiers: e.ticketTiers || [],
+  }));
+  
+  const sellers: Seller[] = (sellersQuery.data || []).map(s => ({
+    ...s,
+    commissionTiers: s.commissionTiers || defaultCommissionTiers,
+  }));
+  
+  const tickets: Ticket[] = (ticketsQuery.data || []).map(t => ({
+    id: t.id,
+    eventId: t.eventId,
+    tierId: t.tierId,
+    buyerName: t.buyerName,
+    buyerEmail: t.buyerEmail,
+    buyerPhone: t.buyerPhone || '',
+    qrCode: t.qrCode,
+    purchaseDate: t.purchaseDate,
+    sellerId: t.sellerId || undefined,
+    sellerCode: t.sellerCode || undefined,
+    isUsed: t.isUsed,
+    usedAt: t.usedAt || undefined,
+    paymentMethod: t.paymentMethod as 'card' | 'googlepay' | 'applepay' | 'cash',
+    price: t.price,
+  }));
 
-      if (eventsData) setEvents(JSON.parse(eventsData));
-      if (sellersData) setSellers(JSON.parse(sellersData));
-      if (ticketsData) setTickets(JSON.parse(ticketsData));
-    } catch (error) {
-      console.log('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const isLoading = eventsQuery.isLoading || sellersQuery.isLoading || ticketsQuery.isLoading;
 
-  const saveEvents = async (newEvents: Event[]) => {
-    setEvents(newEvents);
-    await AsyncStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(newEvents));
-  };
-
-  const saveSellers = async (newSellers: Seller[]) => {
-    setSellers(newSellers);
-    await AsyncStorage.setItem(STORAGE_KEYS.SELLERS, JSON.stringify(newSellers));
-  };
-
-  const saveTickets = async (newTickets: Ticket[]) => {
-    setTickets(newTickets);
-    await AsyncStorage.setItem(STORAGE_KEYS.TICKETS, JSON.stringify(newTickets));
-  };
+  const refetchAll = useCallback(() => {
+    eventsQuery.refetch();
+    sellersQuery.refetch();
+    ticketsQuery.refetch();
+  }, [eventsQuery, sellersQuery, ticketsQuery]);
 
   const addEvent = useCallback(async (event: Omit<Event, 'id' | 'createdAt'>) => {
-    const newEvent: Event = {
-      ...event,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...events, newEvent];
-    await saveEvents(updated);
-    return newEvent;
-  }, [events]);
+    const result = await createEventMutation.mutateAsync({
+      name: event.name,
+      date: event.date,
+      time: event.time,
+      venue: event.venue,
+      location: event.location,
+      image: event.image,
+      description: event.description,
+      promoterId: event.promoterId,
+      ticketTiers: event.ticketTiers.map(t => ({
+        name: t.name,
+        price: t.price,
+        quantity: t.quantity,
+        description: t.description,
+        includesBus: t.includesBus,
+        isVip: t.isVip,
+      })),
+    });
+    await eventsQuery.refetch();
+    return { ...event, id: result.id, createdAt: new Date().toISOString() };
+  }, [createEventMutation, eventsQuery]);
 
   const updateEvent = useCallback(async (id: string, updates: Partial<Event>) => {
-    const updated = events.map(e => e.id === id ? { ...e, ...updates } : e);
-    await saveEvents(updated);
-  }, [events]);
+    await updateEventMutation.mutateAsync({
+      id,
+      name: updates.name,
+      date: updates.date,
+      time: updates.time,
+      venue: updates.venue,
+      location: updates.location,
+      image: updates.image,
+      description: updates.description,
+      promoterId: updates.promoterId,
+      isActive: updates.isActive,
+    });
+    await eventsQuery.refetch();
+  }, [updateEventMutation, eventsQuery]);
 
   const deleteEvent = useCallback(async (id: string) => {
-    const updated = events.filter(e => e.id !== id);
-    await saveEvents(updated);
-  }, [events]);
+    await deleteEventMutation.mutateAsync({ id });
+    await eventsQuery.refetch();
+  }, [deleteEventMutation, eventsQuery]);
 
   const addSeller = useCallback(async (seller: Omit<Seller, 'id' | 'createdAt' | 'totalSales' | 'totalRevenue' | 'commissionTiers'>) => {
-    const newSeller: Seller = {
+    const result = await createSellerMutation.mutateAsync({
+      name: seller.name,
+      email: seller.email,
+      phone: seller.phone,
+      code: seller.code,
+    });
+    await sellersQuery.refetch();
+    return {
       ...seller,
-      id: Date.now().toString(),
+      id: result.id,
       createdAt: new Date().toISOString(),
       totalSales: 0,
       totalRevenue: 0,
       commissionTiers: defaultCommissionTiers,
     };
-    const updated = [...sellers, newSeller];
-    await saveSellers(updated);
-    return newSeller;
-  }, [sellers]);
+  }, [createSellerMutation, sellersQuery]);
 
   const updateSeller = useCallback(async (id: string, updates: Partial<Seller>) => {
-    const updated = sellers.map(s => s.id === id ? { ...s, ...updates } : s);
-    await saveSellers(updated);
-  }, [sellers]);
+    await updateSellerMutation.mutateAsync({
+      id,
+      name: updates.name,
+      email: updates.email,
+      phone: updates.phone,
+      isActive: updates.isActive,
+      commissionTiers: updates.commissionTiers,
+    });
+    await sellersQuery.refetch();
+  }, [updateSellerMutation, sellersQuery]);
 
   const deleteSeller = useCallback(async (id: string) => {
-    const updated = sellers.filter(s => s.id !== id);
-    await saveSellers(updated);
-  }, [sellers]);
+    await deleteSellerMutation.mutateAsync({ id });
+    await sellersQuery.refetch();
+  }, [deleteSellerMutation, sellersQuery]);
 
   const addTicket = useCallback(async (ticket: Omit<Ticket, 'id' | 'purchaseDate' | 'qrCode' | 'isUsed'>) => {
-    const newTicket: Ticket = {
+    const result = await createTicketMutation.mutateAsync({
+      eventId: ticket.eventId,
+      tierId: ticket.tierId,
+      buyerName: ticket.buyerName,
+      buyerEmail: ticket.buyerEmail,
+      buyerPhone: ticket.buyerPhone,
+      sellerCode: ticket.sellerCode,
+      paymentMethod: ticket.paymentMethod,
+    });
+    await eventsQuery.refetch();
+    await ticketsQuery.refetch();
+    await sellersQuery.refetch();
+    return {
       ...ticket,
-      id: Date.now().toString(),
+      id: result.id,
+      qrCode: result.qrCode,
       purchaseDate: new Date().toISOString(),
-      qrCode: `${ticket.eventId}-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
       isUsed: false,
     };
-    const updated = [...tickets, newTicket];
-    await saveTickets(updated);
-
-    const event = events.find(e => e.id === ticket.eventId);
-    if (event) {
-      const updatedTiers = event.ticketTiers.map(t => 
-        t.id === ticket.tierId ? { ...t, sold: t.sold + 1 } : t
-      );
-      await updateEvent(event.id, { ticketTiers: updatedTiers });
-    }
-
-    if (ticket.sellerId) {
-      const seller = sellers.find(s => s.id === ticket.sellerId);
-      if (seller) {
-        await updateSeller(seller.id, {
-          totalSales: seller.totalSales + 1,
-          totalRevenue: seller.totalRevenue + ticket.price,
-        });
-      }
-    }
-
-    return newTicket;
-  }, [tickets, events, sellers, updateEvent, updateSeller]);
+  }, [createTicketMutation, eventsQuery, ticketsQuery, sellersQuery]);
 
   const validateTicket = useCallback(async (qrCode: string): Promise<{ success: boolean; ticket?: Ticket; message: string }> => {
-    const ticket = tickets.find(t => t.qrCode === qrCode);
+    const result = await validateTicketMutation.mutateAsync({ qrCode });
+    await ticketsQuery.refetch();
     
-    if (!ticket) {
-      return { success: false, message: 'Entrada no encontrada' };
+    if (!result.success) {
+      return { 
+        success: false, 
+        message: result.message,
+        ticket: result.ticket ? {
+          id: result.ticket.id,
+          eventId: '',
+          tierId: '',
+          buyerName: result.ticket.buyerName,
+          buyerEmail: '',
+          buyerPhone: '',
+          qrCode,
+          purchaseDate: '',
+          isUsed: result.ticket.isUsed,
+          usedAt: result.ticket.usedAt || undefined,
+          paymentMethod: 'card',
+          price: 0,
+        } : undefined,
+      };
     }
 
-    if (ticket.isUsed) {
-      return { success: false, ticket, message: `Entrada ya usada el ${new Date(ticket.usedAt!).toLocaleString()}` };
-    }
-
-    const updated = tickets.map(t => 
-      t.id === ticket.id ? { ...t, isUsed: true, usedAt: new Date().toISOString() } : t
-    );
-    await saveTickets(updated);
-
-    return { success: true, ticket: { ...ticket, isUsed: true }, message: 'Entrada válida ✓' };
-  }, [tickets]);
+    return { 
+      success: true, 
+      message: result.message,
+      ticket: result.ticket ? {
+        id: result.ticket.id,
+        eventId: '',
+        tierId: '',
+        buyerName: result.ticket.buyerName,
+        buyerEmail: '',
+        buyerPhone: '',
+        qrCode,
+        purchaseDate: '',
+        isUsed: true,
+        usedAt: result.ticket.usedAt || undefined,
+        paymentMethod: 'card',
+        price: 0,
+      } : undefined,
+    };
+  }, [validateTicketMutation, ticketsQuery]);
 
   const getStats = useCallback((): SalesStats => {
     const today = new Date().toDateString();
@@ -186,5 +238,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     getStats,
     getEventTickets,
     getSellerByCode,
+    refetchAll,
   };
 });

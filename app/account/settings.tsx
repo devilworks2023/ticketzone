@@ -187,8 +187,15 @@ export default function AccountSettingsScreen() {
           text: 'Salir',
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            router.replace('/');
+            console.log('Logging out from settings...');
+            try {
+              await logout();
+              console.log('Logout successful, navigating...');
+              router.replace('/');
+            } catch (error) {
+              console.log('Logout error:', error);
+              router.replace('/');
+            }
           },
         },
       ]
@@ -238,6 +245,11 @@ export default function AccountSettingsScreen() {
 
   const renderProfileSection = () => (
     <View style={styles.section}>
+      <TouchableOpacity style={styles.logoutButtonTop} onPress={handleLogout}>
+        <LogOut color={Colors.dark.error} size={20} />
+        <Text style={styles.logoutText}>Cerrar Sesión</Text>
+      </TouchableOpacity>
+
       <Text style={styles.sectionTitle}>Información Personal</Text>
       
       <View style={styles.inputGroup}>
@@ -890,6 +902,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: Colors.dark.error + '15',
     marginTop: 8,
+  },
+  logoutButtonTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Colors.dark.error + '20',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.error + '40',
   },
   logoutText: {
     fontSize: 16,

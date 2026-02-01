@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { 
   Lock, 
   Mail, 
@@ -312,6 +313,13 @@ export default function RegisterProScreen() {
                 Los códigos de invitación son generados por el administrador de la plataforma. 
                 Contacta con el administrador para obtener tu código de acceso.
               </Text>
+              <TouchableOpacity 
+                style={styles.contactButton}
+                onPress={() => Linking.openURL('mailto:devilworks2023@gmail.com?subject=Solicitud%20de%20código%20de%20invitación%20TicketZone')}
+              >
+                <Mail color={Colors.dark.primary} size={16} />
+                <Text style={styles.contactButtonText}>Contactar al administrador</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -478,5 +486,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.textMuted,
     lineHeight: 20,
+  },
+  contactButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.dark.primary + '15',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  contactButtonText: {
+    color: Colors.dark.primary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

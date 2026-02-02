@@ -77,7 +77,10 @@ export default function AdminSellersManageScreen() {
     setFormEmail(seller.email);
     setFormPhone(seller.phone || '');
     setFormIsActive(seller.isActive);
-    setFormCommissionPercentage(seller.commissionPercentage?.toString() || '10');
+    const defaultPercentage = seller.commissionTiers && seller.commissionTiers.length > 0
+      ? seller.commissionTiers[seller.commissionTiers.length - 1].percentage
+      : 10;
+    setFormCommissionPercentage(defaultPercentage.toString());
     setIsModalVisible(true);
   };
 
@@ -104,7 +107,9 @@ export default function AdminSellersManageScreen() {
           name: formName.trim(),
           phone: formPhone.trim() || undefined,
           isActive: formIsActive,
-          commissionPercentage: commissionValue,
+          commissionTiers: [
+            { minSales: 0, maxSales: null, percentage: commissionValue },
+          ],
         });
         Alert.alert('Éxito', 'Vendedor actualizado correctamente');
       } else {
@@ -113,7 +118,9 @@ export default function AdminSellersManageScreen() {
           email: formEmail.trim().toLowerCase(),
           phone: formPhone.trim() || undefined,
           code: formCode.trim().toUpperCase(),
-          commissionPercentage: commissionValue,
+          commissionTiers: [
+            { minSales: 0, maxSales: null, percentage: commissionValue },
+          ],
         });
         Alert.alert('Éxito', 'Vendedor creado correctamente');
       }
@@ -243,7 +250,11 @@ export default function AdminSellersManageScreen() {
                   <Text style={styles.statLabel}>generado</Text>
                 </View>
                 <View style={styles.statItem}>
-                  <Text style={styles.commissionBadge}>{seller.commissionPercentage || 10}%</Text>
+                  <Text style={styles.commissionBadge}>
+                    {seller.commissionTiers && seller.commissionTiers.length > 0
+                      ? `${seller.commissionTiers[seller.commissionTiers.length - 1].percentage}%`
+                      : '10%'}
+                  </Text>
                   <Text style={styles.statLabel}>comisión</Text>
                 </View>
               </View>

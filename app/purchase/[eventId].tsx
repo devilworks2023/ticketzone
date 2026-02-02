@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Modal } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Minus, Plus, CreditCard, Smartphone, Crown, Bus, Check, Tag, Gift } from 'lucide-react-native';
+import { Minus, Plus, CreditCard, Smartphone, Crown, Bus, Check, Tag, Gift, Calendar, MapPin, User, ChevronDown, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
-import { TicketExtra } from '@/types';
 
 type PaymentMethod = 'card' | 'googlepay' | 'applepay';
 
@@ -24,6 +23,28 @@ export default function PurchaseScreen() {
   const [sellerCode, setSellerCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Datos demográficos
+  const [buyerBirthdate, setBuyerBirthdate] = useState('');
+  const [buyerGender, setBuyerGender] = useState<'male' | 'female' | 'other' | 'prefer_not_say' | ''>('');
+  const [buyerCity, setBuyerCity] = useState('');
+  const [buyerCountry, setBuyerCountry] = useState('España');
+  const [showGenderModal, setShowGenderModal] = useState(false);
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  
+  const genderOptions = [
+    { value: 'male', label: 'Hombre' },
+    { value: 'female', label: 'Mujer' },
+    { value: 'other', label: 'Otro' },
+    { value: 'prefer_not_say', label: 'Prefiero no decirlo' },
+  ];
+  
+  const countryOptions = [
+    'España', 'Portugal', 'Francia', 'Italia', 'Alemania', 'Reino Unido', 
+    'Países Bajos', 'Bélgica', 'Suiza', 'Austria', 'Polonia', 'Irlanda',
+    'Argentina', 'México', 'Colombia', 'Chile', 'Perú', 'Venezuela',
+    'Estados Unidos', 'Canadá', 'Brasil', 'Otro'
+  ];
 
   if (!event) {
     return (
@@ -108,12 +129,23 @@ export default function PurchaseScreen() {
       for (const tier of event.ticketTiers) {
         const qty = quantities[tier.id] || 0;
         for (let i = 0; i < qty; i++) {
+          // Convertir fecha DD/MM/YYYY a YYYY-MM-DD para la base de datos
+          let formattedBirthdate = null;
+          if (buyerBirthdate && buyerBirthdate.length === 10) {
+            const [day, month, year] = buyerBirthdate.split('/');
+            formattedBirthdate = `${year}-${month}-${day}`;
+          }
+          
           await addTicket({
             eventId: event.id,
             tierId: tier.id,
             buyerName: buyerName.trim(),
             buyerEmail: buyerEmail.trim(),
             buyerPhone: buyerPhone.trim(),
+            buyerBirthdate: formattedBirthdate || undefined,
+            buyerGender: buyerGender || undefined,
+            buyerCity: buyerCity.trim() || undefined,
+            buyerCountry: buyerCountry || undefined,
             sellerId: seller?.id,
             sellerCode: seller?.code,
             paymentMethod,
@@ -282,6 +314,78 @@ export default function PurchaseScreen() {
           />
         </View>
 
+        <View style={styles.divider} />
+        <Text style={styles.sectionTitle}>Información adicional (opcional)</Text>
+        <Text style={styles.sectionSubtitle}>Estos datos nos ayudan a mejorar nuestros eventos</Text>
+
+        <View style={styles.inputGroup}>
+          <View style={styles.labelRow}>
+            <Calendar color={Colors.dark.secondary} size={16} />
+            <Text style={styles.label}>Fecha de nacimiento</Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="DD/MM/AAAA"
+            placeholderTextColor={Colors.dark.textMuted}
+            value={buyerBirthdate}
+            onChangeText={(text) => {
+              const cleaned = text.replace(/[^0-9]/g, '');
+              let formatted = cleaned;
+              if (cleaned.length >= 2) formatted = cleaned.slice(0, 2) + '/' + cleaned.slice(2);
+              if (cleaned.length >= 4) formatted = cleaned.slice(0, 2) + '/' + cleaned.slice(2, 4) + '/' + cleaned.slice(4, 8);
+              setBuyerBirthdate(formatted);
+            }}
+            keyboardType="number-pad"
+            maxLength={10}
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <View style={styles.labelRow}>
+            <User color={Colors.dark.secondary} size={16} />
+            <Text style={styles.label}>Género</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.selectInput}
+            onPress={() => setShowGenderModal(true)}
+          >
+            <Text style={buyerGender ? styles.selectInputText : styles.selectInputPlaceholder}>
+              {buyerGender ? genderOptions.find(g => g.value === buyerGender)?.label : 'Seleccionar'}
+            </Text>
+            <ChevronDown color={Colors.dark.textMuted} size={20} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.rowInputs}>
+          <View style={[styles.inputGroup, { flex: 1 }]}>
+            <View style={styles.labelRow}>
+              <MapPin color={Colors.dark.secondary} size={16} />
+              <Text style={styles.label}>Ciudad</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Tu ciudad"
+              placeholderTextColor={Colors.dark.textMuted}
+              value={buyerCity}
+              onChangeText={setBuyerCity}
+            />
+          </View>
+          <View style={[styles.inputGroup, { flex: 1 }]}>
+            <Text style={styles.label}>País</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowCountryModal(true)}
+            >
+              <Text style={styles.selectInputText} numberOfLines={1}>
+                {buyerCountry || 'Seleccionar'}
+              </Text>
+              <ChevronDown color={Colors.dark.textMuted} size={20} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
         <View style={styles.inputGroup}>
           <View style={styles.labelRow}>
             <Tag color={Colors.dark.secondary} size={16} />
@@ -331,6 +435,64 @@ export default function PurchaseScreen() {
 
         <View style={{ height: 140 }} />
       </ScrollView>
+
+      <Modal visible={showGenderModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Seleccionar género</Text>
+              <TouchableOpacity onPress={() => setShowGenderModal(false)}>
+                <X color={Colors.dark.text} size={24} />
+              </TouchableOpacity>
+            </View>
+            {genderOptions.map((option) => (
+              <TouchableOpacity
+                key={option.value}
+                style={[styles.modalOption, buyerGender === option.value && styles.modalOptionActive]}
+                onPress={() => {
+                  setBuyerGender(option.value as typeof buyerGender);
+                  setShowGenderModal(false);
+                }}
+              >
+                <Text style={[styles.modalOptionText, buyerGender === option.value && styles.modalOptionTextActive]}>
+                  {option.label}
+                </Text>
+                {buyerGender === option.value && <Check color={Colors.dark.primary} size={20} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showCountryModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '70%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Seleccionar país</Text>
+              <TouchableOpacity onPress={() => setShowCountryModal(false)}>
+                <X color={Colors.dark.text} size={24} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {countryOptions.map((country) => (
+                <TouchableOpacity
+                  key={country}
+                  style={[styles.modalOption, buyerCountry === country && styles.modalOptionActive]}
+                  onPress={() => {
+                    setBuyerCountry(country);
+                    setShowCountryModal(false);
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, buyerCountry === country && styles.modalOptionTextActive]}>
+                    {country}
+                  </Text>
+                  {buyerCountry === country && <Check color={Colors.dark.primary} size={20} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.footer}>
         <View style={styles.totalContainer}>
@@ -634,8 +796,83 @@ const styles = StyleSheet.create({
   },
   tierExtrasPrice: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.dark.secondary,
     marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: Colors.dark.textMuted,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    marginTop: -8,
+  },
+  rowInputs: {
+    flexDirection: 'row' as const,
+    gap: 12,
+    paddingHorizontal: 20,
+    marginHorizontal: -20,
+  },
+  selectInput: {
+    backgroundColor: Colors.dark.card,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  selectInputText: {
+    fontSize: 16,
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  selectInputPlaceholder: {
+    fontSize: 16,
+    color: Colors.dark.textMuted,
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end' as const,
+  },
+  modalContent: {
+    backgroundColor: Colors.dark.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.dark.text,
+  },
+  modalOption: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  modalOptionActive: {
+    backgroundColor: Colors.dark.primary + '15',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: Colors.dark.textSecondary,
+  },
+  modalOptionTextActive: {
+    color: Colors.dark.text,
+    fontWeight: '600' as const,
   },
 });

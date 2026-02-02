@@ -107,6 +107,12 @@ function initializeDatabase(db) {
       buyer_name TEXT NOT NULL,
       buyer_email TEXT NOT NULL,
       buyer_phone TEXT,
+      buyer_birthdate TEXT,
+      buyer_gender TEXT,
+      buyer_city TEXT,
+      buyer_country TEXT,
+      buyer_latitude REAL,
+      buyer_longitude REAL,
       qr_code TEXT UNIQUE NOT NULL,
       purchase_date TEXT DEFAULT CURRENT_TIMESTAMP,
       seller_id TEXT,
@@ -211,6 +217,24 @@ function initializeDatabase(db) {
     console.log('>>> Migración: columna email_verified añadida a users');
   } catch (_e) {
     // La columna ya existe, ignorar
+  }
+
+  // Migraciones para datos demográficos de compradores
+  const demographicColumns = [
+    { name: 'buyer_birthdate', type: 'TEXT' },
+    { name: 'buyer_gender', type: 'TEXT' },
+    { name: 'buyer_city', type: 'TEXT' },
+    { name: 'buyer_country', type: 'TEXT' },
+    { name: 'buyer_latitude', type: 'REAL' },
+    { name: 'buyer_longitude', type: 'REAL' },
+  ];
+  for (const col of demographicColumns) {
+    try {
+      db.exec(`ALTER TABLE tickets ADD COLUMN ${col.name} ${col.type}`);
+      console.log(`>>> Migración: columna ${col.name} añadida a tickets`);
+    } catch (_e2) {
+      // La columna ya existe
+    }
   }
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
@@ -443,6 +467,12 @@ const ticketsRouter = createTRPCRouter({
   create: publicProcedure.input(z.object({
     eventId: z.string(), tierId: z.string(), buyerName: z.string(),
     buyerEmail: z.string(), buyerPhone: z.string().optional(),
+    buyerBirthdate: z.string().optional(),
+    buyerGender: z.enum(['male', 'female', 'other', 'prefer_not_say']).optional(),
+    buyerCity: z.string().optional(),
+    buyerCountry: z.string().optional(),
+    buyerLatitude: z.number().optional(),
+    buyerLongitude: z.number().optional(),
     sellerCode: z.string().optional(),
     paymentMethod: z.enum(['card', 'googlepay', 'applepay', 'cash']),
   })).mutation(async ({ ctx, input }) => {
@@ -475,10 +505,14 @@ const ticketsRouter = createTRPCRouter({
     const qrCode = `${input.eventId}-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
     ctx.db.prepare(`INSERT INTO tickets (id, event_id, tier_id, buyer_name, buyer_email, buyer_phone,
+      buyer_birthdate, buyer_gender, buyer_city, buyer_country, buyer_latitude, buyer_longitude,
       qr_code, seller_id, seller_code, payment_method, price, platform_fee, promoter_amount, seller_commission)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       ticketId, input.eventId, input.tierId, input.buyerName, input.buyerEmail,
-      input.buyerPhone || null, qrCode, seller?.id || null,
+      input.buyerPhone || null, input.buyerBirthdate || null, input.buyerGender || null,
+      input.buyerCity || null, input.buyerCountry || null,
+      input.buyerLatitude || null, input.buyerLongitude || null,
+      qrCode, seller?.id || null,
       input.sellerCode?.toUpperCase() || null, input.paymentMethod,
       tier.price, platformFee, promoterAmount, sellerCommission
     );
@@ -736,6 +770,12 @@ const paymentsRouter = createTRPCRouter({
     buyerName: z.string(),
     buyerEmail: z.string(),
     buyerPhone: z.string().optional(),
+    buyerBirthdate: z.string().optional(),
+    buyerGender: z.enum(['male', 'female', 'other', 'prefer_not_say']).optional(),
+    buyerCity: z.string().optional(),
+    buyerCountry: z.string().optional(),
+    buyerLatitude: z.number().optional(),
+    buyerLongitude: z.number().optional(),
     sellerCode: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
@@ -770,10 +810,14 @@ const paymentsRouter = createTRPCRouter({
       const qrCode = `${input.eventId}-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
       ctx.db.prepare(`INSERT INTO tickets (id, event_id, tier_id, buyer_name, buyer_email, buyer_phone,
+        buyer_birthdate, buyer_gender, buyer_city, buyer_country, buyer_latitude, buyer_longitude,
         qr_code, seller_id, seller_code, payment_method, payment_intent_id, price, platform_fee, promoter_amount, seller_commission)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         ticketId, input.eventId, input.tierId, input.buyerName, input.buyerEmail,
-        input.buyerPhone || null, qrCode, seller?.id || null,
+        input.buyerPhone || null, input.buyerBirthdate || null, input.buyerGender || null,
+        input.buyerCity || null, input.buyerCountry || null,
+        input.buyerLatitude || null, input.buyerLongitude || null,
+        qrCode, seller?.id || null,
         input.sellerCode?.toUpperCase() || null, 'card', input.paymentIntentId,
         tier.price, platformFee, promoterAmount, sellerCommission
       );
@@ -826,6 +870,147 @@ const paymentsRouter = createTRPCRouter({
 });
 
 const statsRouter = createTRPCRouter({
+  getDashboardStats: publicProcedure.query(({ ctx }) => {
+    const today = new Date().toISOString().split('T')[0];
+    const totalStats = ctx.db.prepare(`SELECT COUNT(*) as total_tickets,
+      COALESCE(SUM(price), 0) as total_revenue, COALESCE(SUM(platform_fee), 0) as platform_earnings
+      FROM tickets`).get();
+    const activeEvents = ctx.db.prepare('SELECT COUNT(*) as active_events FROM events WHERE is_active = 1').get();
+    const eventStats = ctx.db.prepare('SELECT COUNT(*) as total_events FROM events').get();
+
+    return {
+      totalRevenue: totalStats.total_revenue,
+      totalTicketsSold: totalStats.total_tickets,
+      platformEarnings: totalStats.platform_earnings,
+      activeEvents: activeEvents.active_events,
+      totalEvents: eventStats.total_events,
+    };
+  }),
+
+  getBuyerAnalytics: publicProcedure.query(({ ctx }) => {
+    // Análisis por género
+    const genderStats = ctx.db.prepare(`
+      SELECT buyer_gender as gender, COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets WHERE buyer_gender IS NOT NULL
+      GROUP BY buyer_gender
+    `).all();
+
+    // Análisis por edad (tramos)
+    const ageStats = ctx.db.prepare(`
+      SELECT 
+        CASE 
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) < 18 THEN 'under_18'
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) BETWEEN 18 AND 24 THEN '18-24'
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) BETWEEN 25 AND 34 THEN '25-34'
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) BETWEEN 35 AND 44 THEN '35-44'
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) BETWEEN 45 AND 54 THEN '45-54'
+          WHEN (strftime('%Y', 'now') - strftime('%Y', buyer_birthdate)) >= 55 THEN '55+'
+          ELSE 'unknown'
+        END as age_range,
+        COUNT(*) as count,
+        COALESCE(SUM(price), 0) as revenue
+      FROM tickets WHERE buyer_birthdate IS NOT NULL
+      GROUP BY age_range
+      ORDER BY 
+        CASE age_range
+          WHEN 'under_18' THEN 1
+          WHEN '18-24' THEN 2
+          WHEN '25-34' THEN 3
+          WHEN '35-44' THEN 4
+          WHEN '45-54' THEN 5
+          WHEN '55+' THEN 6
+          ELSE 7
+        END
+    `).all();
+
+    // Análisis por ciudad
+    const cityStats = ctx.db.prepare(`
+      SELECT buyer_city as city, buyer_country as country, COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets WHERE buyer_city IS NOT NULL
+      GROUP BY buyer_city, buyer_country
+      ORDER BY count DESC
+      LIMIT 20
+    `).all();
+
+    // Análisis por país
+    const countryStats = ctx.db.prepare(`
+      SELECT buyer_country as country, COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets WHERE buyer_country IS NOT NULL
+      GROUP BY buyer_country
+      ORDER BY count DESC
+    `).all();
+
+    // Ubicaciones para el mapa (solo tickets con coordenadas)
+    const locations = ctx.db.prepare(`
+      SELECT buyer_city as city, buyer_country as country, 
+             buyer_latitude as latitude, buyer_longitude as longitude,
+             COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets 
+      WHERE buyer_latitude IS NOT NULL AND buyer_longitude IS NOT NULL
+      GROUP BY buyer_city, buyer_country, buyer_latitude, buyer_longitude
+      ORDER BY count DESC
+      LIMIT 100
+    `).all();
+
+    // Totales
+    const totals = ctx.db.prepare(`
+      SELECT COUNT(*) as total_tickets,
+             COUNT(DISTINCT buyer_email) as unique_buyers,
+             COALESCE(SUM(price), 0) as total_revenue,
+             COUNT(buyer_gender) as with_gender,
+             COUNT(buyer_birthdate) as with_birthdate,
+             COUNT(buyer_city) as with_location
+      FROM tickets
+    `).get();
+
+    // Ventas por mes (últimos 12 meses)
+    const monthlySales = ctx.db.prepare(`
+      SELECT strftime('%Y-%m', purchase_date) as month,
+             COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets
+      WHERE purchase_date >= date('now', '-12 months')
+      GROUP BY month
+      ORDER BY month ASC
+    `).all();
+
+    // Ventas por día de la semana
+    const weekdaySales = ctx.db.prepare(`
+      SELECT strftime('%w', purchase_date) as weekday,
+             COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets
+      GROUP BY weekday
+      ORDER BY weekday
+    `).all();
+
+    // Ventas por hora del día
+    const hourlySales = ctx.db.prepare(`
+      SELECT strftime('%H', purchase_date) as hour,
+             COUNT(*) as count, COALESCE(SUM(price), 0) as revenue
+      FROM tickets
+      GROUP BY hour
+      ORDER BY hour
+    `).all();
+
+    return {
+      gender: genderStats.map(g => ({ gender: g.gender, count: g.count, revenue: g.revenue })),
+      ageRanges: ageStats.map(a => ({ range: a.age_range, count: a.count, revenue: a.revenue })),
+      cities: cityStats.map(c => ({ city: c.city, country: c.country, count: c.count, revenue: c.revenue })),
+      countries: countryStats.map(c => ({ country: c.country, count: c.count, revenue: c.revenue })),
+      locations: locations.map(l => ({ city: l.city, country: l.country, latitude: l.latitude, longitude: l.longitude, count: l.count, revenue: l.revenue })),
+      totals: {
+        totalTickets: totals.total_tickets,
+        uniqueBuyers: totals.unique_buyers,
+        totalRevenue: totals.total_revenue,
+        withGender: totals.with_gender,
+        withBirthdate: totals.with_birthdate,
+        withLocation: totals.with_location,
+      },
+      monthlySales: monthlySales.map(m => ({ month: m.month, count: m.count, revenue: m.revenue })),
+      weekdaySales: weekdaySales.map(w => ({ weekday: parseInt(w.weekday), count: w.count, revenue: w.revenue })),
+      hourlySales: hourlySales.map(h => ({ hour: parseInt(h.hour), count: h.count, revenue: h.revenue })),
+    };
+  }),
+
   dashboard: publicProcedure.query(({ ctx }) => {
     const today = new Date().toISOString().split('T')[0];
     const totalStats = ctx.db.prepare(`SELECT COUNT(*) as total_tickets,
@@ -841,6 +1026,8 @@ const statsRouter = createTRPCRouter({
       FROM tickets t JOIN events e ON t.event_id = e.id ORDER BY t.purchase_date DESC LIMIT 10`).all();
     const topEvents = ctx.db.prepare(`SELECT e.id, e.name, e.date, COUNT(t.id) as tickets_sold, COALESCE(SUM(t.price), 0) as revenue
       FROM events e LEFT JOIN tickets t ON e.id = t.event_id GROUP BY e.id ORDER BY revenue DESC LIMIT 5`).all();
+    const topSellers = ctx.db.prepare(`SELECT s.id, s.name, s.code, s.total_sales, s.total_revenue
+      FROM sellers s WHERE s.is_active = 1 ORDER BY s.total_sales DESC LIMIT 5`).all();
 
     return {
       totalRevenue: totalStats.total_revenue, totalTicketsSold: totalStats.total_tickets,
@@ -852,6 +1039,7 @@ const statsRouter = createTRPCRouter({
         id: t.id, buyerName: t.buyer_name, price: t.price, purchaseDate: t.purchase_date, eventName: t.event_name,
       })),
       topEvents: topEvents.map(e => ({ id: e.id, name: e.name, date: e.date, ticketsSold: e.tickets_sold, revenue: e.revenue })),
+      topSellers: topSellers.map(s => ({ id: s.id, name: s.name, code: s.code, totalSales: s.total_sales, totalRevenue: s.total_revenue })),
     };
   }),
 });

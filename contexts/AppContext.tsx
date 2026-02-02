@@ -134,8 +134,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
     await sellersQuery.refetch();
   }, [deleteSellerMutation, sellersQuery]);
 
-  const addTicket = useCallback(async (ticket: Omit<Ticket, 'id' | 'purchaseDate' | 'qrCode' | 'isUsed'>) => {
-    const result = await createTicketMutation.mutateAsync({
+  const addTicket = useCallback(async (ticket: Omit<Ticket, 'id' | 'purchaseDate' | 'qrCode' | 'isUsed'> & {
+    buyerBirthdate?: string;
+    buyerGender?: 'male' | 'female' | 'other' | 'prefer_not_say';
+    buyerCity?: string;
+    buyerCountry?: string;
+  }) => {
+    const mutationData = {
       eventId: ticket.eventId,
       tierId: ticket.tierId,
       buyerName: ticket.buyerName,
@@ -143,7 +148,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
       buyerPhone: ticket.buyerPhone,
       sellerCode: ticket.sellerCode,
       paymentMethod: ticket.paymentMethod,
-    });
+      // Demographic data - passed through but types not yet generated
+      ...(ticket.buyerBirthdate && { buyerBirthdate: ticket.buyerBirthdate }),
+      ...(ticket.buyerGender && { buyerGender: ticket.buyerGender }),
+      ...(ticket.buyerCity && { buyerCity: ticket.buyerCity }),
+      ...(ticket.buyerCountry && { buyerCountry: ticket.buyerCountry }),
+    } as Parameters<typeof createTicketMutation.mutateAsync>[0];
+    const result = await createTicketMutation.mutateAsync(mutationData);
     await eventsQuery.refetch();
     await ticketsQuery.refetch();
     await sellersQuery.refetch();

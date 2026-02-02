@@ -43,6 +43,7 @@ function initializeDatabase(db) {
       stripe_account_id TEXT,
       stripe_account_status TEXT DEFAULT 'pending',
       commission_percentage REAL DEFAULT 5.0,
+      billing_model TEXT DEFAULT 'commission',
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -235,6 +236,14 @@ function initializeDatabase(db) {
     } catch (_e2) {
       // La columna ya existe
     }
+  }
+
+  // Migración: añadir billing_model a promoters
+  try {
+    db.exec(`ALTER TABLE promoters ADD COLUMN billing_model TEXT DEFAULT 'commission'`);
+    console.log('>>> Migración: columna billing_model añadida a promoters');
+  } catch (_e3) {
+    // La columna ya existe
   }
 
   const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
@@ -625,7 +634,8 @@ const promotersRouter = createTRPCRouter({
       id: p.id, name: p.name, email: p.email, phone: p.phone,
       companyName: p.company_name, taxId: p.tax_id,
       stripeAccountId: p.stripe_account_id, stripeAccountStatus: p.stripe_account_status,
-      commissionPercentage: p.commission_percentage, isActive: Boolean(p.is_active),
+      commissionPercentage: p.commission_percentage, billingModel: p.billing_model || 'commission',
+      isActive: Boolean(p.is_active),
       createdAt: p.created_at, eventCount: p.event_count, totalEarnings: p.total_earnings,
       pendingPayout: p.pending_payout || 0,
     }));
@@ -651,7 +661,8 @@ const promotersRouter = createTRPCRouter({
       id: promoter.id, name: promoter.name, email: promoter.email, phone: promoter.phone,
       companyName: promoter.company_name, taxId: promoter.tax_id,
       stripeAccountId: promoter.stripe_account_id, stripeAccountStatus: promoter.stripe_account_status,
-      commissionPercentage: promoter.commission_percentage, isActive: Boolean(promoter.is_active),
+      commissionPercentage: promoter.commission_percentage, billingModel: promoter.billing_model || 'commission',
+      isActive: Boolean(promoter.is_active),
       createdAt: promoter.created_at, eventCount: promoter.event_count, totalEarnings: promoter.total_earnings,
       events: events.map(e => ({
         id: e.id, name: e.name, date: e.date, venue: e.venue,
@@ -684,7 +695,9 @@ const promotersRouter = createTRPCRouter({
   update: publicProcedure.input(z.object({
     id: z.string(), name: z.string().optional(), email: z.string().email().optional(),
     phone: z.string().optional(), companyName: z.string().optional(), taxId: z.string().optional(),
-    commissionPercentage: z.number().min(0).max(100).optional(), isActive: z.boolean().optional(),
+    commissionPercentage: z.number().min(0).max(100).optional(), 
+    billingModel: z.enum(['commission', 'subscription']).optional(),
+    isActive: z.boolean().optional(),
   })).mutation(({ ctx, input }) => {
     const { id, ...updates } = input;
     const fields = []; const values = [];
@@ -694,6 +707,7 @@ const promotersRouter = createTRPCRouter({
     if (updates.companyName !== undefined) { fields.push('company_name = ?'); values.push(updates.companyName); }
     if (updates.taxId !== undefined) { fields.push('tax_id = ?'); values.push(updates.taxId); }
     if (updates.commissionPercentage !== undefined) { fields.push('commission_percentage = ?'); values.push(updates.commissionPercentage); }
+    if (updates.billingModel !== undefined) { fields.push('billing_model = ?'); values.push(updates.billingModel); }
     if (updates.isActive !== undefined) { fields.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
     if (fields.length > 0) {
       fields.push('updated_at = CURRENT_TIMESTAMP'); values.push(id);
@@ -871,7 +885,6 @@ const paymentsRouter = createTRPCRouter({
 
 const statsRouter = createTRPCRouter({
   getDashboardStats: publicProcedure.query(({ ctx }) => {
-    const today = new Date().toISOString().split('T')[0];
     const totalStats = ctx.db.prepare(`SELECT COUNT(*) as total_tickets,
       COALESCE(SUM(price), 0) as total_revenue, COALESCE(SUM(platform_fee), 0) as platform_earnings
       FROM tickets`).get();
@@ -1054,6 +1067,14 @@ const settingsRouter = createTRPCRouter({
   set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
     ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).run(input.key, input.value);
+    return { success: true };
+  }),
+  setMultiple: publicProcedure.input(z.record(z.string(), z.string())).mutation(({ ctx, input }) => {
+    const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
+    for (const [key, value] of Object.entries(input)) {
+      stmt.run(key, value);
+    }
     return { success: true };
   }),
 });

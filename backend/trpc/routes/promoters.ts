@@ -22,6 +22,7 @@ export const promotersRouter = createTRPCRouter({
       stripeAccountId: p.stripe_account_id,
       stripeAccountStatus: p.stripe_account_status,
       commissionPercentage: p.commission_percentage,
+      billingModel: (p.billing_model || 'commission') as 'commission' | 'subscription',
       isActive: Boolean(p.is_active),
       createdAt: p.created_at,
       eventCount: p.event_count,
@@ -66,6 +67,7 @@ export const promotersRouter = createTRPCRouter({
         stripeAccountId: promoter.stripe_account_id,
         stripeAccountStatus: promoter.stripe_account_status,
         commissionPercentage: promoter.commission_percentage,
+        billingModel: (promoter.billing_model || 'commission') as 'commission' | 'subscription',
         isActive: Boolean(promoter.is_active),
         createdAt: promoter.created_at,
         eventCount: promoter.event_count,
@@ -130,6 +132,7 @@ export const promotersRouter = createTRPCRouter({
       companyName: z.string().optional(),
       taxId: z.string().optional(),
       commissionPercentage: z.number().min(0).max(100).optional(),
+      billingModel: z.enum(['commission', 'subscription']).optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(({ ctx, input }) => {
@@ -143,6 +146,7 @@ export const promotersRouter = createTRPCRouter({
       if (updates.companyName !== undefined) { fields.push('company_name = ?'); values.push(updates.companyName); }
       if (updates.taxId !== undefined) { fields.push('tax_id = ?'); values.push(updates.taxId); }
       if (updates.commissionPercentage !== undefined) { fields.push('commission_percentage = ?'); values.push(updates.commissionPercentage); }
+      if (updates.billingModel !== undefined) { fields.push('billing_model = ?'); values.push(updates.billingModel); }
       if (updates.isActive !== undefined) { fields.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
 
       if (fields.length > 0) {

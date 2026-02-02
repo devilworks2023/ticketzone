@@ -39,6 +39,7 @@ export default function AdminPromotersManageScreen() {
   const [formCompanyName, setFormCompanyName] = useState('');
   const [formTaxId, setFormTaxId] = useState('');
   const [formCommission, setFormCommission] = useState('5');
+  const [formBillingModel, setFormBillingModel] = useState<'commission' | 'subscription'>('commission');
   const [formIsActive, setFormIsActive] = useState(true);
 
   const promotersQuery = trpc.promoters.list.useQuery();
@@ -55,6 +56,7 @@ export default function AdminPromotersManageScreen() {
     setFormCompanyName('');
     setFormTaxId('');
     setFormCommission('5');
+    setFormBillingModel('commission');
     setFormIsActive(true);
     setEditingPromoter(null);
   };
@@ -67,6 +69,7 @@ export default function AdminPromotersManageScreen() {
     setFormCompanyName(promoter.companyName || '');
     setFormTaxId(promoter.taxId || '');
     setFormCommission(String(promoter.commissionPercentage ?? 5));
+    setFormBillingModel(promoter.billingModel || 'commission');
     setFormIsActive(promoter.isActive);
     setIsModalVisible(true);
   };
@@ -95,6 +98,7 @@ export default function AdminPromotersManageScreen() {
           companyName: formCompanyName.trim() || undefined,
           taxId: formTaxId.trim() || undefined,
           commissionPercentage: commission,
+          billingModel: formBillingModel,
           isActive: formIsActive,
         });
         Alert.alert('Éxito', 'Promotor actualizado correctamente');
@@ -250,11 +254,17 @@ export default function AdminPromotersManageScreen() {
               </View>
 
               <View style={styles.commissionRow}>
-                <View style={styles.commissionItem}>
-                  <Percent color={Colors.dark.warning} size={16} />
-                  <Text style={styles.commissionValue}>{promoter.commissionPercentage ?? 5}%</Text>
-                  <Text style={styles.commissionLabel}>comisión</Text>
+                <View style={styles.billingModelBadge}>
+                  <Text style={styles.billingModelText}>
+                    {promoter.billingModel === 'subscription' ? '📅 Suscripción' : '💰 Comisión'}
+                  </Text>
                 </View>
+                {promoter.billingModel !== 'subscription' && (
+                  <View style={styles.commissionItem}>
+                    <Percent color={Colors.dark.warning} size={16} />
+                    <Text style={styles.commissionValue}>{promoter.commissionPercentage ?? 5}%</Text>
+                  </View>
+                )}
                 <View style={styles.stripeStatusItem}>
                   <CreditCard color={getStripeStatusColor(promoter.stripeAccountStatus)} size={16} />
                   <Text style={[styles.stripeStatusText, { color: getStripeStatusColor(promoter.stripeAccountStatus) }]}>
@@ -353,25 +363,53 @@ export default function AdminPromotersManageScreen() {
               </View>
 
               {editingPromoter && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Comisión por venta (%)</Text>
-                  <View style={styles.commissionInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.commissionInput]}
-                      value={formCommission}
-                      onChangeText={setFormCommission}
-                      placeholder="5"
-                      placeholderTextColor={Colors.dark.textMuted}
-                      keyboardType="decimal-pad"
-                    />
-                    <View style={styles.commissionSuffix}>
-                      <Percent color={Colors.dark.textMuted} size={18} />
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Modelo de facturación</Text>
+                    <View style={styles.billingModelSelector}>
+                      <TouchableOpacity
+                        style={[styles.billingOption, formBillingModel === 'commission' && styles.billingOptionSelected]}
+                        onPress={() => setFormBillingModel('commission')}
+                      >
+                        <Text style={[styles.billingOptionText, formBillingModel === 'commission' && styles.billingOptionTextSelected]}>
+                          💰 Comisión
+                        </Text>
+                        <Text style={styles.billingOptionDesc}>% por venta</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.billingOption, formBillingModel === 'subscription' && styles.billingOptionSelected]}
+                        onPress={() => setFormBillingModel('subscription')}
+                      >
+                        <Text style={[styles.billingOptionText, formBillingModel === 'subscription' && styles.billingOptionTextSelected]}>
+                          📅 Suscripción
+                        </Text>
+                        <Text style={styles.billingOptionDesc}>Cuota mensual</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
-                  <Text style={styles.inputHint}>
-                    Porcentaje que la plataforma retiene de cada venta
-                  </Text>
-                </View>
+
+                  {formBillingModel === 'commission' && (
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Comisión por venta (%)</Text>
+                      <View style={styles.commissionInputRow}>
+                        <TextInput
+                          style={[styles.input, styles.commissionInput]}
+                          value={formCommission}
+                          onChangeText={setFormCommission}
+                          placeholder="5"
+                          placeholderTextColor={Colors.dark.textMuted}
+                          keyboardType="decimal-pad"
+                        />
+                        <View style={styles.commissionSuffix}>
+                          <Percent color={Colors.dark.textMuted} size={18} />
+                        </View>
+                      </View>
+                      <Text style={styles.inputHint}>
+                        Porcentaje que la plataforma retiene de cada venta
+                      </Text>
+                    </View>
+                  )}
+                </>
               )}
 
               {editingPromoter && (
@@ -596,6 +634,47 @@ const styles = StyleSheet.create({
   },
   commissionLabel: {
     fontSize: 12,
+    color: Colors.dark.textMuted,
+  },
+  billingModelBadge: {
+    backgroundColor: Colors.dark.primary + '20',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  billingModelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.dark.primary,
+  },
+  billingModelSelector: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  billingOption: {
+    flex: 1,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.dark.border,
+    padding: 14,
+    alignItems: 'center',
+  },
+  billingOptionSelected: {
+    borderColor: Colors.dark.primary,
+    backgroundColor: Colors.dark.primary + '15',
+  },
+  billingOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.dark.textMuted,
+    marginBottom: 4,
+  },
+  billingOptionTextSelected: {
+    color: Colors.dark.text,
+  },
+  billingOptionDesc: {
+    fontSize: 11,
     color: Colors.dark.textMuted,
   },
   stripeStatusItem: {

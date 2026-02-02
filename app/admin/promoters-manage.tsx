@@ -11,7 +11,7 @@ import {
   TextInput,
   Switch,
 } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Building2,
@@ -25,6 +25,7 @@ import {
   Calendar,
   DollarSign,
   Package,
+  Percent,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -37,6 +38,7 @@ export default function AdminPromotersManageScreen() {
   const [formPhone, setFormPhone] = useState('');
   const [formCompanyName, setFormCompanyName] = useState('');
   const [formTaxId, setFormTaxId] = useState('');
+  const [formCommission, setFormCommission] = useState('5');
   const [formIsActive, setFormIsActive] = useState(true);
 
   const promotersQuery = trpc.promoters.list.useQuery();
@@ -52,6 +54,7 @@ export default function AdminPromotersManageScreen() {
     setFormPhone('');
     setFormCompanyName('');
     setFormTaxId('');
+    setFormCommission('5');
     setFormIsActive(true);
     setEditingPromoter(null);
   };
@@ -63,6 +66,7 @@ export default function AdminPromotersManageScreen() {
     setFormPhone(promoter.phone || '');
     setFormCompanyName(promoter.companyName || '');
     setFormTaxId(promoter.taxId || '');
+    setFormCommission(String(promoter.commissionPercentage ?? 5));
     setFormIsActive(promoter.isActive);
     setIsModalVisible(true);
   };
@@ -79,12 +83,18 @@ export default function AdminPromotersManageScreen() {
 
     try {
       if (editingPromoter) {
+        const commission = parseFloat(formCommission);
+        if (isNaN(commission) || commission < 0 || commission > 100) {
+          Alert.alert('Error', 'La comisión debe ser un número entre 0 y 100');
+          return;
+        }
         await updateMutation.mutateAsync({
           id: editingPromoter.id,
           name: formName.trim(),
           phone: formPhone.trim() || undefined,
           companyName: formCompanyName.trim() || undefined,
           taxId: formTaxId.trim() || undefined,
+          commissionPercentage: commission,
           isActive: formIsActive,
         });
         Alert.alert('Éxito', 'Promotor actualizado correctamente');
@@ -239,11 +249,18 @@ export default function AdminPromotersManageScreen() {
                 </View>
               </View>
 
-              <View style={styles.stripeStatus}>
-                <CreditCard color={getStripeStatusColor(promoter.stripeAccountStatus)} size={16} />
-                <Text style={[styles.stripeStatusText, { color: getStripeStatusColor(promoter.stripeAccountStatus) }]}>
-                  Stripe: {getStripeStatusLabel(promoter.stripeAccountStatus)}
-                </Text>
+              <View style={styles.commissionRow}>
+                <View style={styles.commissionItem}>
+                  <Percent color={Colors.dark.warning} size={16} />
+                  <Text style={styles.commissionValue}>{promoter.commissionPercentage ?? 5}%</Text>
+                  <Text style={styles.commissionLabel}>comisión</Text>
+                </View>
+                <View style={styles.stripeStatusItem}>
+                  <CreditCard color={getStripeStatusColor(promoter.stripeAccountStatus)} size={16} />
+                  <Text style={[styles.stripeStatusText, { color: getStripeStatusColor(promoter.stripeAccountStatus) }]}>
+                    {getStripeStatusLabel(promoter.stripeAccountStatus)}
+                  </Text>
+                </View>
               </View>
             </View>
           ))
@@ -334,6 +351,28 @@ export default function AdminPromotersManageScreen() {
                   autoCapitalize="characters"
                 />
               </View>
+
+              {editingPromoter && (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Comisión por venta (%)</Text>
+                  <View style={styles.commissionInputRow}>
+                    <TextInput
+                      style={[styles.input, styles.commissionInput]}
+                      value={formCommission}
+                      onChangeText={setFormCommission}
+                      placeholder="5"
+                      placeholderTextColor={Colors.dark.textMuted}
+                      keyboardType="decimal-pad"
+                    />
+                    <View style={styles.commissionSuffix}>
+                      <Percent color={Colors.dark.textMuted} size={18} />
+                    </View>
+                  </View>
+                  <Text style={styles.inputHint}>
+                    Porcentaje que la plataforma retiene de cada venta
+                  </Text>
+                </View>
+              )}
 
               {editingPromoter && (
                 <View style={styles.toggleRow}>
@@ -535,6 +574,60 @@ const styles = StyleSheet.create({
   stripeStatusText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  commissionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  commissionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commissionValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.dark.warning,
+  },
+  commissionLabel: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+  },
+  stripeStatusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  commissionInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  commissionInput: {
+    flex: 1,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  commissionSuffix: {
+    backgroundColor: Colors.dark.surface,
+    borderWidth: 1,
+    borderLeftWidth: 0,
+    borderColor: Colors.dark.border,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    marginTop: 6,
   },
   bottomPadding: {
     height: 40,

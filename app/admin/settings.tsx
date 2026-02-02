@@ -81,7 +81,7 @@ export default function AdminSettingsScreen() {
       
       Alert.alert(
         'Éxito', 
-        `Configuración guardada correctamente.\n\nValores guardados:\n- Comisión: ${result.savedValues?.platform_commission || platformCommission}%\n- Retiro adelantado: ${result.savedValues?.early_withdrawal_fee || earlyWithdrawalFee}%`
+        `Configuración guardada correctamente.\n\nValores guardados:\n- Comisión: ${platformCommission}%\n- Retiro adelantado: ${earlyWithdrawalFee}%`
       );
     } catch (error: any) {
       console.error('[SETTINGS] Error guardando configuración:', error);

@@ -45,4 +45,17 @@ export const settingsRouter = createTRPCRouter({
 
       return { success: true };
     }),
+
+  debug: publicProcedure.query(({ ctx }) => {
+    const settings = ctx.db.prepare('SELECT * FROM settings').all() as any[];
+    const result: Record<string, string> = {};
+    for (const s of settings) {
+      result[s.key] = s.value;
+    }
+    return {
+      dbPath: 'SQLite Database',
+      settings: result,
+      timestamp: new Date().toISOString(),
+    };
+  }),
 });

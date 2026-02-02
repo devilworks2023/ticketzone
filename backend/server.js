@@ -1913,6 +1913,32 @@ const subscriptionsRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  getSubscriptionStats: publicProcedure.query(({ ctx }) => {
+    const activeSubscriptions = ctx.db.prepare(`
+      SELECT COUNT(*) as count FROM promoter_subscriptions WHERE status = 'active'
+    `).get();
+
+    const monthlyRevenue = ctx.db.prepare(`
+      SELECT COALESCE(SUM(sp.price), 0) as total
+      FROM promoter_subscriptions ps
+      JOIN subscription_plans sp ON ps.plan_id = sp.id
+      WHERE ps.status = 'active'
+    `).get();
+
+    const planStats = ctx.db.prepare(`
+      SELECT sp.id, sp.name, COUNT(ps.id) as subscribers
+      FROM subscription_plans sp
+      LEFT JOIN promoter_subscriptions ps ON sp.id = ps.plan_id AND ps.status = 'active'
+      GROUP BY sp.id
+    `).all();
+
+    return {
+      activeSubscriptions: activeSubscriptions?.count || 0,
+      monthlyRevenue: monthlyRevenue?.total || 0,
+      planStats: planStats.map(p => ({ id: p.id, name: p.name, subscribers: p.subscribers || 0 })),
+    };
+  }),
+
   canCreateEvent: publicProcedure
     .input(z.object({ promoterId: z.string() }))
     .query(({ ctx, input }) => {

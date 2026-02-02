@@ -17,6 +17,7 @@ import {
   Save,
   CreditCard,
   Globe,
+  Percent,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -25,6 +26,8 @@ export default function AdminSettingsScreen() {
   const [platformName, setPlatformName] = useState('TicketZone');
   const [currency, setCurrency] = useState('EUR');
   const [stripeEnabled, setStripeEnabled] = useState(true);
+  const [platformCommission, setPlatformCommission] = useState('5');
+  const [earlyWithdrawalFee, setEarlyWithdrawalFee] = useState('2');
   const [isSaving, setIsSaving] = useState(false);
 
   const settingsQuery = trpc.settings.getAll.useQuery();
@@ -35,16 +38,29 @@ export default function AdminSettingsScreen() {
       setPlatformName(settingsQuery.data.platform_name || 'TicketZone');
       setCurrency(settingsQuery.data.currency || 'EUR');
       setStripeEnabled(settingsQuery.data.stripe_enabled !== 'false');
+      setPlatformCommission(settingsQuery.data.platform_commission || '5');
+      setEarlyWithdrawalFee(settingsQuery.data.early_withdrawal_fee || '2');
     }
   }, [settingsQuery.data]);
 
   const handleSave = async () => {
+    if (parseFloat(platformCommission) < 0 || parseFloat(platformCommission) > 100) {
+      Alert.alert('Error', 'La comisión debe estar entre 0 y 100');
+      return;
+    }
+    if (parseFloat(earlyWithdrawalFee) < 0 || parseFloat(earlyWithdrawalFee) > 100) {
+      Alert.alert('Error', 'La comisión de retiro adelantado debe estar entre 0 y 100');
+      return;
+    }
+    
     setIsSaving(true);
     try {
       await updateSettingsMutation.mutateAsync({
         platform_name: platformName,
         currency: currency,
         stripe_enabled: stripeEnabled ? 'true' : 'false',
+        platform_commission: platformCommission,
+        early_withdrawal_fee: earlyWithdrawalFee,
       });
       Alert.alert('Éxito', 'Configuración guardada correctamente');
       settingsQuery.refetch();
@@ -142,12 +158,41 @@ export default function AdminSettingsScreen() {
                 />
               </View>
 
-              <View style={styles.infoBox}>
-                <Text style={styles.infoTitle}>Modelo de negocio</Text>
-                <Text style={styles.infoText}>
-                  Esta plataforma utiliza un modelo de suscripción mensual para promotores.
-                  Los promotores pagan una cuota fija según el número de eventos que crean,
-                  sin comisiones sobre las ventas de entradas.
+              </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Percent color={Colors.dark.secondary} size={20} />
+                <Text style={styles.sectionTitle}>Comisiones</Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Comisión de la plataforma (%)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={platformCommission}
+                  onChangeText={setPlatformCommission}
+                  placeholder="5"
+                  placeholderTextColor={Colors.dark.textMuted}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.inputHint}>
+                  Porcentaje que cobra la plataforma por cada venta de entrada
+                </Text>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Comisión de retiro adelantado (%)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={earlyWithdrawalFee}
+                  onChangeText={setEarlyWithdrawalFee}
+                  placeholder="2"
+                  placeholderTextColor={Colors.dark.textMuted}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.inputHint}>
+                  Porcentaje que se cobra a los promotores por retirar dinero antes de que finalice el evento
                 </Text>
               </View>
             </View>
@@ -243,6 +288,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: Colors.dark.text,
+  },
+  inputHint: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    marginTop: 6,
+    lineHeight: 18,
   },
   currencySelector: {
     flexDirection: 'row',

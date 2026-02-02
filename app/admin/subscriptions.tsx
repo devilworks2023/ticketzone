@@ -79,7 +79,7 @@ export default function AdminSubscriptionsScreen() {
     setFormMaxEvents(plan.maxEventsPerMonth.toString());
     setFormPrice(plan.priceMonthly.toString());
     setFormIsActive(plan.isActive);
-    setFormSortOrder(plan.sortOrder.toString());
+    setFormSortOrder(plan.sortOrder?.toString() || '');
     setIsModalVisible(true);
   };
 

@@ -86,6 +86,13 @@ export default function CheckoutScreen() {
         const { error } = await initPaymentSheet({
           paymentIntentClientSecret: result.clientSecret,
           merchantDisplayName: 'TicketZone',
+          applePay: {
+            merchantCountryCode: 'ES',
+          },
+          googlePay: {
+            merchantCountryCode: 'ES',
+            testEnv: false,
+          },
           allowsDelayedPaymentMethods: false,
           defaultBillingDetails: {
             name: paymentData.buyerName,

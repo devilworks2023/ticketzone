@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, Ticket, DollarSign, UserX, UserCheck } from 'lucide-react-native';
+import { Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, Ticket, DollarSign, UserX, UserCheck, MoreVertical, Edit, Trash2, CalendarDays } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -10,9 +10,11 @@ import { trpc } from '@/lib/trpc';
 export default function PromoterDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [menuVisible, setMenuVisible] = React.useState(false);
   
   const promotersQuery = trpc.promoters.list.useQuery();
   const updatePromoterMutation = trpc.promoters.update.useMutation();
+  const deletePromoterMutation = trpc.promoters.delete.useMutation();
   
   const promoter = promotersQuery.data?.find(p => p.id === id);
 
@@ -64,6 +66,42 @@ export default function PromoterDetailsScreen() {
     );
   };
 
+  const handleDeletePromoter = () => {
+    if (!promoter) return;
+    setMenuVisible(false);
+    
+    Alert.alert(
+      'Eliminar promotor',
+      `¿Estás seguro de que quieres eliminar a ${promoter.name}? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePromoterMutation.mutateAsync({ id: promoter.id });
+              Alert.alert('Éxito', 'Promotor eliminado correctamente');
+              router.back();
+            } catch {
+              Alert.alert('Error', 'No se pudo eliminar el promotor');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditPromoter = () => {
+    setMenuVisible(false);
+    router.push(`/admin/promoters-manage?edit=${id}`);
+  };
+
+  const handleViewEvents = () => {
+    setMenuVisible(false);
+    router.push(`/admin/events-manage?promoter=${id}`);
+  };
+
   if (promotersQuery.isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -106,8 +144,41 @@ export default function PromoterDetailsScreen() {
           title: promoter.name,
           headerStyle: { backgroundColor: Colors.dark.background },
           headerTintColor: Colors.dark.text,
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => setMenuVisible(!menuVisible)}
+              style={styles.menuButton}
+            >
+              <MoreVertical color={Colors.dark.text} size={22} />
+            </TouchableOpacity>
+          ),
         }} 
       />
+
+      {menuVisible && (
+        <View style={styles.menuOverlay}>
+          <TouchableOpacity 
+            style={styles.menuBackdrop} 
+            onPress={() => setMenuVisible(false)} 
+            activeOpacity={1}
+          />
+          <View style={styles.menuContainer}>
+            <TouchableOpacity style={styles.menuItem} onPress={handleEditPromoter}>
+              <Edit color={Colors.dark.primary} size={18} />
+              <Text style={styles.menuItemText}>Editar promotor</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={handleViewEvents}>
+              <CalendarDays color={Colors.dark.secondary} size={18} />
+              <Text style={styles.menuItemText}>Ver eventos</Text>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity style={styles.menuItem} onPress={handleDeletePromoter}>
+              <Trash2 color={Colors.dark.error} size={18} />
+              <Text style={[styles.menuItemText, { color: Colors.dark.error }]}>Eliminar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
       
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -412,5 +483,55 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  menuButton: {
+    padding: 8,
+    marginRight: 4,
+  },
+  menuOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+  },
+  menuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  menuContainer: {
+    position: 'absolute',
+    top: 8,
+    right: 16,
+    backgroundColor: Colors.dark.card,
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  menuItemText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.dark.text,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: 4,
   },
 });

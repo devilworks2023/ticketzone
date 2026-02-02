@@ -445,10 +445,13 @@ const ticketsRouter = createTRPCRouter({
     buyerEmail: z.string(), buyerPhone: z.string().optional(),
     sellerCode: z.string().optional(),
     paymentMethod: z.enum(['card', 'googlepay', 'applepay', 'cash']),
-  })).mutation(({ ctx, input }) => {
+  })).mutation(async ({ ctx, input }) => {
     const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
     if (!tier) throw new Error('Tipo de entrada no encontrado');
     if (tier.sold >= tier.quantity) throw new Error('Entradas agotadas');
+
+    const event = ctx.db.prepare('SELECT * FROM events WHERE id = ?').get(input.eventId);
+    if (!event) throw new Error('Evento no encontrado');
 
     let seller = null; let sellerCommission = 0;
     if (input.sellerCode) {
@@ -486,6 +489,15 @@ const ticketsRouter = createTRPCRouter({
       ctx.db.prepare('UPDATE sellers SET total_sales = total_sales + 1, total_revenue = total_revenue + ? WHERE id = ?')
         .run(tier.price, seller.id);
     }
+
+    // Enviar email con las entradas
+    sendTicketEmail(
+      input.buyerEmail,
+      input.buyerName,
+      [{ id: ticketId, qrCode, price: tier.price }],
+      { name: event.name, date: event.date, time: event.time, venue: event.venue, location: event.location },
+      tier.name
+    ).catch(err => console.error('Error enviando email:', err));
 
     return { id: ticketId, qrCode, price: tier.price, success: true };
   }),
@@ -725,9 +737,12 @@ const paymentsRouter = createTRPCRouter({
     buyerEmail: z.string(),
     buyerPhone: z.string().optional(),
     sellerCode: z.string().optional(),
-  })).mutation(({ ctx, input }) => {
+  })).mutation(async ({ ctx, input }) => {
     const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
     if (!tier) throw new Error('Tipo de entrada no encontrado');
+
+    const event = ctx.db.prepare('SELECT * FROM events WHERE id = ?').get(input.eventId);
+    if (!event) throw new Error('Evento no encontrado');
 
     const tickets = [];
     let seller = null;
@@ -772,6 +787,15 @@ const paymentsRouter = createTRPCRouter({
       ctx.db.prepare('UPDATE sellers SET total_sales = total_sales + ?, total_revenue = total_revenue + ? WHERE id = ?')
         .run(input.quantity, tier.price * input.quantity, seller.id);
     }
+
+    // Enviar email con las entradas
+    sendTicketEmail(
+      input.buyerEmail,
+      input.buyerName,
+      tickets,
+      { name: event.name, date: event.date, time: event.time, venue: event.venue, location: event.location },
+      tier.name
+    ).catch(err => console.error('Error enviando email:', err));
 
     return { success: true, tickets, total: tier.price * input.quantity };
   }),
@@ -927,6 +951,117 @@ async function sendVerificationEmail(email, code, name) {
   } catch (error) {
     console.error('❌ Error enviando email:', error.message);
     console.log(`📧 Código de respaldo - Email: ${email} | Código: ${code}`);
+    return false;
+  }
+}
+
+async function sendTicketEmail(buyerEmail, buyerName, tickets, event, tierName) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('⚠️  SMTP no configurado - Email de entradas no enviado');
+    console.log(`📧 Entradas para: ${buyerEmail}`);
+    tickets.forEach(t => console.log(`   QR: ${t.qrCode}`));
+    return false;
+  }
+
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const appUrl = process.env.APP_URL || 'https://tudominio.com';
+
+  const ticketsHtml = tickets.map((ticket, index) => `
+    <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin: 15px 0; border: 2px dashed #667eea;">
+      <div style="text-align: center;">
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">Entrada ${index + 1} de ${tickets.length}</p>
+        <div style="background: white; padding: 15px; border-radius: 8px; display: inline-block;">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(ticket.qrCode)}" 
+               alt="QR Code" style="width: 180px; height: 180px;" />
+        </div>
+        <p style="margin: 15px 0 5px 0; font-size: 12px; color: #888;">Código:</p>
+        <p style="margin: 0; font-size: 14px; font-weight: bold; color: #333; font-family: monospace;">${ticket.qrCode}</p>
+      </div>
+    </div>
+  `).join('');
+
+  try {
+    await smtpTransporter.sendMail({
+      from: `"TicketZone" <${fromEmail}>`,
+      to: buyerEmail,
+      subject: `🎟️ Tus entradas para ${event.name} - TicketZone`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+          <div style="max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+              <h1 style="margin: 0; font-size: 28px;">🎟️ TicketZone</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">Confirmación de compra</p>
+            </div>
+            
+            <div style="padding: 30px;">
+              <h2 style="margin: 0 0 5px 0; color: #333;">¡Hola ${buyerName}!</h2>
+              <p style="color: #666; margin: 0 0 25px 0;">Tu compra se ha realizado con éxito. Aquí tienes tus entradas:</p>
+              
+              <div style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                <h3 style="margin: 0 0 15px 0; color: #667eea;">📍 Detalles del evento</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Evento:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${event.name}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Fecha:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${new Date(event.date).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Hora:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${event.time}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Lugar:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${event.venue}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Dirección:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${event.location}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Tipo de entrada:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${tierName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; color: #888; font-size: 14px;">Cantidad:</td>
+                    <td style="padding: 8px 0; color: #333; font-weight: bold; text-align: right;">${tickets.length} entrada(s)</td>
+                  </tr>
+                </table>
+              </div>
+              
+              <h3 style="margin: 0 0 10px 0; color: #333; text-align: center;">🎫 Tus entradas</h3>
+              <p style="color: #666; text-align: center; margin: 0 0 20px 0; font-size: 14px;">Presenta estos códigos QR en la entrada del evento</p>
+              
+              ${ticketsHtml}
+              
+              <div style="background: #fff3cd; border-radius: 8px; padding: 15px; margin-top: 25px;">
+                <p style="margin: 0; color: #856404; font-size: 14px;">
+                  <strong>⚠️ Importante:</strong> Guarda este email. Cada código QR solo puede usarse una vez.
+                </p>
+              </div>
+            </div>
+            
+            <div style="padding: 20px; text-align: center; color: #888; font-size: 12px; border-top: 1px solid #eee;">
+              <p style="margin: 0 0 5px 0;">¿Tienes alguna pregunta? Contacta con el organizador del evento.</p>
+              <p style="margin: 0;">© ${new Date().getFullYear()} TicketZone - Todos los derechos reservados</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    });
+    console.log(`✅ Email de entradas enviado a: ${buyerEmail} (${tickets.length} entradas)`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error enviando email de entradas:', error.message);
     return false;
   }
 }

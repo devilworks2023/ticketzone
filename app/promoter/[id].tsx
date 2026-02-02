@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, Ticket, DollarSign, Edit, UserX, UserCheck } from 'lucide-react-native';
+import { Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, Ticket, DollarSign, UserX, UserCheck } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
@@ -55,7 +55,7 @@ export default function PromoterDetailsScreen() {
               });
               await promotersQuery.refetch();
               Alert.alert('Éxito', `Promotor ${promoter.isActive ? 'desactivado' : 'activado'} correctamente`);
-            } catch (error) {
+            } catch {
               Alert.alert('Error', 'No se pudo actualizar el estado del promotor');
             }
           },

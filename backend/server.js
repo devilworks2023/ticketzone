@@ -892,12 +892,12 @@ const smtpTransporter = nodemailer.createTransport({
   secure: false,
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+    pass: process.env.SMTP_PASSWORD,
   },
 });
 
 async function sendVerificationEmail(email, code, name) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
     console.log('⚠️  SMTP no configurado - Código mostrado solo en logs');
     console.log(`📧 Email: ${email} | Código: ${code}`);
     return false;
@@ -956,7 +956,7 @@ async function sendVerificationEmail(email, code, name) {
 }
 
 async function sendTicketEmail(buyerEmail, buyerName, tickets, event, tierName) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
     console.log('⚠️  SMTP no configurado - Email de entradas no enviado');
     console.log(`📧 Entradas para: ${buyerEmail}`);
     tickets.forEach(t => console.log(`   QR: ${t.qrCode}`));

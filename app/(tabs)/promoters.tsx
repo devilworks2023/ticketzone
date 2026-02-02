@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, RefreshControl, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Plus, Search, Building2, Mail, Phone, CreditCard, TrendingUp, Calendar, MoreVertical } from 'lucide-react-native';
@@ -25,6 +25,11 @@ export default function PromotersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const promotersQuery = trpc.promoters.list.useQuery();
+  const updatePromoterMutation = trpc.promoters.update.useMutation({
+    onSuccess: () => {
+      promotersQuery.refetch();
+    },
+  });
   const promoters: Promoter[] = (promotersQuery.data || []).map(p => ({
     ...p,
     stripeAccountStatus: (p.stripeAccountStatus as 'pending' | 'active' | 'disabled' | null) || 'pending',
@@ -56,6 +61,27 @@ export default function PromotersScreen() {
     }
   };
 
+  const handleToggleActive = useCallback((promoter: Promoter) => {
+    const action = promoter.isActive ? 'desactivar' : 'activar';
+    Alert.alert(
+      `${promoter.isActive ? 'Desactivar' : 'Activar'} promotor`,
+      `¿Estás seguro de que quieres ${action} a ${promoter.name}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: promoter.isActive ? 'Desactivar' : 'Activar',
+          style: promoter.isActive ? 'destructive' : 'default',
+          onPress: () => {
+            updatePromoterMutation.mutate({
+              id: promoter.id,
+              isActive: !promoter.isActive,
+            });
+          },
+        },
+      ]
+    );
+  }, [updatePromoterMutation]);
+
   const handlePromoterOptions = (promoter: Promoter) => {
     Alert.alert(
       promoter.name,
@@ -66,6 +92,7 @@ export default function PromotersScreen() {
         { 
           text: promoter.isActive ? 'Desactivar' : 'Activar', 
           style: promoter.isActive ? 'destructive' : 'default',
+          onPress: () => handleToggleActive(promoter),
         },
         { text: 'Cancelar', style: 'cancel' },
       ]

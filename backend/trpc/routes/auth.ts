@@ -15,6 +15,48 @@ function verifyPassword(password: string, hash: string): boolean {
 }
 
 export const authRouter = createTRPCRouter({
+  createPromoterInvitationCode: publicProcedure
+    .input(z.object({
+      type: z.enum(['seller', 'scanner']),
+      promoterId: z.string(),
+      maxUses: z.number().min(0).default(1),
+      expiresInDays: z.number().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const id = `inv_${Date.now()}`;
+      const code = generateInvitationCode();
+      const expiresAt = input.expiresInDays 
+        ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+      ctx.db.prepare(`
+        INSERT INTO invitation_codes (id, code, type, max_uses, expires_at, created_by_promoter, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+      `).run(id, code, input.type, input.maxUses, expiresAt, input.promoterId);
+
+      return { success: true, code, id };
+    }),
+
+  getPromoterInvitationCodes: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(({ ctx, input }) => {
+      const codes = ctx.db.prepare(`
+        SELECT * FROM invitation_codes 
+        WHERE created_by_promoter = ?
+        ORDER BY created_at DESC
+      `).all(input.promoterId) as any[];
+
+      return codes.map(c => ({
+        id: c.id,
+        code: c.code,
+        type: c.type,
+        maxUses: c.max_uses,
+        currentUses: c.current_uses,
+        expiresAt: c.expires_at,
+        isActive: c.is_active === 1,
+        createdAt: c.created_at,
+      }));
+    }),
   debugUsers: publicProcedure.query(({ ctx }) => {
     const users = ctx.db.prepare('SELECT id, email, name, role, is_active FROM users').all() as any[];
     console.log('[DEBUG] Users in database:', JSON.stringify(users));

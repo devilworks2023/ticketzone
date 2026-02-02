@@ -25,6 +25,7 @@ export interface Event {
   venue: string;
   location: string;
   image: string;
+  images?: string[];
   description: string;
   ticketTiers: TicketTier[];
   isActive: boolean;

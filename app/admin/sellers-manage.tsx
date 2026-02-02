@@ -37,6 +37,7 @@ export default function AdminSellersManageScreen() {
   const [formPhone, setFormPhone] = useState('');
   const [formCode, setFormCode] = useState('');
   const [formIsActive, setFormIsActive] = useState(true);
+  const [formCommissionPercentage, setFormCommissionPercentage] = useState('10');
 
   const sellersQuery = trpc.sellers.list.useQuery();
   const createMutation = trpc.sellers.create.useMutation();
@@ -60,6 +61,7 @@ export default function AdminSellersManageScreen() {
     setFormPhone('');
     setFormCode(generateCode());
     setFormIsActive(true);
+    setFormCommissionPercentage('10');
     setEditingSeller(null);
   };
 
@@ -75,6 +77,7 @@ export default function AdminSellersManageScreen() {
     setFormEmail(seller.email);
     setFormPhone(seller.phone || '');
     setFormIsActive(seller.isActive);
+    setFormCommissionPercentage(seller.commissionPercentage?.toString() || '10');
     setIsModalVisible(true);
   };
 
@@ -89,12 +92,19 @@ export default function AdminSellersManageScreen() {
     }
 
     try {
+      const commissionValue = parseFloat(formCommissionPercentage);
+      if (isNaN(commissionValue) || commissionValue < 0 || commissionValue > 100) {
+        Alert.alert('Error', 'La comisión debe ser un número entre 0 y 100');
+        return;
+      }
+
       if (editingSeller) {
         await updateMutation.mutateAsync({
           id: editingSeller.id,
           name: formName.trim(),
           phone: formPhone.trim() || undefined,
           isActive: formIsActive,
+          commissionPercentage: commissionValue,
         });
         Alert.alert('Éxito', 'Vendedor actualizado correctamente');
       } else {
@@ -103,6 +113,7 @@ export default function AdminSellersManageScreen() {
           email: formEmail.trim().toLowerCase(),
           phone: formPhone.trim() || undefined,
           code: formCode.trim().toUpperCase(),
+          commissionPercentage: commissionValue,
         });
         Alert.alert('Éxito', 'Vendedor creado correctamente');
       }
@@ -231,6 +242,10 @@ export default function AdminSellersManageScreen() {
                   <Text style={styles.statValue}>{formatCurrency(seller.totalRevenue || 0)}</Text>
                   <Text style={styles.statLabel}>generado</Text>
                 </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.commissionBadge}>{seller.commissionPercentage || 10}%</Text>
+                  <Text style={styles.statLabel}>comisión</Text>
+                </View>
               </View>
             </View>
           ))
@@ -297,6 +312,19 @@ export default function AdminSellersManageScreen() {
                   placeholderTextColor={Colors.dark.textMuted}
                   keyboardType="phone-pad"
                 />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Comisión por venta (%)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formCommissionPercentage}
+                  onChangeText={setFormCommissionPercentage}
+                  placeholder="10"
+                  placeholderTextColor={Colors.dark.textMuted}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.inputHint}>Porcentaje de comisión que recibe por cada venta (0-100)</Text>
               </View>
 
               {editingSeller && (
@@ -655,5 +683,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.dark.textMuted,
     marginTop: 6,
+  },
+  commissionBadge: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.dark.warning,
   },
 });

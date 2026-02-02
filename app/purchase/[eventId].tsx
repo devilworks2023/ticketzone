@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Minus, Plus, CreditCard, Smartphone, Crown, Bus, Check, Tag } from 'lucide-react-native';
+import { Minus, Plus, CreditCard, Smartphone, Crown, Bus, Check, Tag, Gift } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
+import { TicketExtra } from '@/types';
 
 type PaymentMethod = 'card' | 'googlepay' | 'applepay';
 
@@ -16,6 +17,7 @@ export default function PurchaseScreen() {
   const event = events.find(e => e.id === eventId);
 
   const [quantities, setQuantities] = useState<{ [tierId: string]: number }>({});
+  const [selectedExtras, setSelectedExtras] = useState<{ [tierId: string]: { [extraId: string]: boolean } }>({});
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
@@ -47,9 +49,37 @@ export default function PurchaseScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const toggleExtra = (tierId: string, extraId: string) => {
+    setSelectedExtras(prev => ({
+      ...prev,
+      [tierId]: {
+        ...(prev[tierId] || {}),
+        [extraId]: !(prev[tierId]?.[extraId] || false),
+      },
+    }));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const getExtrasTotal = (tierId: string): number => {
+    const tier = event.ticketTiers.find(t => t.id === tierId);
+    if (!tier || !tier.extras) return 0;
+    
+    const qty = quantities[tierId] || 0;
+    if (qty === 0) return 0;
+    
+    return tier.extras.reduce((sum, extra) => {
+      if (selectedExtras[tierId]?.[extra.id]) {
+        return sum + (extra.price * qty);
+      }
+      return sum;
+    }, 0);
+  };
+
   const totalAmount = event.ticketTiers.reduce((sum, tier) => {
     const qty = quantities[tier.id] || 0;
-    return sum + (qty * tier.price);
+    const tierTotal = qty * tier.price;
+    const extrasTotal = getExtrasTotal(tier.id);
+    return sum + tierTotal + extrasTotal;
   }, 0);
 
   const totalTickets = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
@@ -146,6 +176,9 @@ export default function PurchaseScreen() {
 
               <View style={styles.tierRight}>
                 <Text style={styles.tierPrice}>{formatCurrency(tier.price)}</Text>
+                {qty > 0 && getExtrasTotal(tier.id) > 0 && (
+                  <Text style={styles.tierExtrasPrice}>+ {formatCurrency(getExtrasTotal(tier.id))}</Text>
+                )}
                 <View style={styles.quantityControl}>
                   <TouchableOpacity
                     style={[styles.qtyButton, qty === 0 && styles.qtyButtonDisabled]}
@@ -164,6 +197,47 @@ export default function PurchaseScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {qty > 0 && tier.extras && tier.extras.length > 0 && (
+                <View style={styles.extrasContainer}>
+                  <Text style={styles.extrasTitle}>Extras opcionales (se añaden al precio base):</Text>
+                  {tier.extras.map((extra) => {
+                    const isSelected = selectedExtras[tier.id]?.[extra.id] || false;
+                    return (
+                      <TouchableOpacity
+                        key={extra.id}
+                        style={[styles.extraOption, isSelected && styles.extraOptionActive]}
+                        onPress={() => toggleExtra(tier.id, extra.id)}
+                      >
+                        <View style={styles.extraInfo}>
+                          <View style={styles.extraHeader}>
+                            <Gift color={isSelected ? Colors.dark.secondary : Colors.dark.textMuted} size={16} />
+                            <Text style={[styles.extraName, isSelected && styles.extraNameActive]}>
+                              {extra.name}
+                            </Text>
+                          </View>
+                          {extra.description && (
+                            <Text style={styles.extraDescription}>{extra.description}</Text>
+                          )}
+                        </View>
+                        <View style={styles.extraRight}>
+                          <Text style={[styles.extraPrice, isSelected && styles.extraPriceActive]}>
+                            +{formatCurrency(extra.price)}
+                          </Text>
+                          {isSelected && (
+                            <View style={styles.extraCheck}>
+                              <Check color={Colors.dark.secondary} size={14} />
+                            </View>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <Text style={styles.extrasNote}>
+                    Total extras × {qty} entrada(s): {formatCurrency(getExtrasTotal(tier.id))}
+                  </Text>
+                </View>
+              )}
             </View>
           );
         })}
@@ -480,5 +554,88 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFF',
+  },
+  extrasContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  extrasTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.dark.textSecondary,
+    marginBottom: 10,
+  },
+  extraOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  extraOptionActive: {
+    borderColor: Colors.dark.secondary,
+    backgroundColor: Colors.dark.secondary + '10',
+  },
+  extraInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  extraHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  extraName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.dark.textSecondary,
+  },
+  extraNameActive: {
+    color: Colors.dark.text,
+  },
+  extraDescription: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    marginLeft: 24,
+  },
+  extraRight: {
+    alignItems: 'flex-end',
+  },
+  extraPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.dark.textMuted,
+  },
+  extraPriceActive: {
+    color: Colors.dark.secondary,
+  },
+  extraCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.dark.secondary + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  extrasNote: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.dark.primary,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  tierExtrasPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.dark.secondary,
+    marginBottom: 8,
   },
 });

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Image, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { Plus, Trash2, Crown, Bus, Image as ImageIcon, Gift, X } from 'lucide-react-native';
+import { Plus, Trash2, Crown, Bus, Image as ImageIcon, Gift, X, Upload } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '@/contexts/AppContext';
 import Colors from '@/constants/colors';
@@ -24,7 +25,8 @@ export default function CreateEventScreen() {
   const [venue, setVenue] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedImage, setSelectedImage] = useState(defaultImages[0]);
+  const [eventImages, setEventImages] = useState<string[]>([defaultImages[0]]);
+  const [isUploading, setIsUploading] = useState(false);
   const [ticketTiers, setTicketTiers] = useState<Omit<TicketTier, 'id' | 'sold'>[]>([
     { name: 'General', price: 20, quantity: 100, description: 'Entrada general', isVip: false, includesBus: false, extras: [] },
   ]);
@@ -75,6 +77,38 @@ export default function CreateEventScreen() {
     setTicketTiers(ticketTiers.filter((_, i) => i !== index));
   };
 
+  const pickImage = async () => {
+    if (eventImages.length >= 4) {
+      Alert.alert('Límite alcanzado', 'Solo puedes subir hasta 4 fotos');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setEventImages([...eventImages, result.assets[0].uri]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.log('Image picker error:', error);
+      Alert.alert('Error', 'No se pudo seleccionar la imagen');
+    }
+  };
+
+  const removeImage = (index: number) => {
+    if (eventImages.length === 1) {
+      Alert.alert('Error', 'El evento debe tener al menos una imagen');
+      return;
+    }
+    setEventImages(eventImages.filter((_, i) => i !== index));
+  };
+
   const handleCreate = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Por favor introduce el nombre del evento');
@@ -107,7 +141,8 @@ export default function CreateEventScreen() {
         venue: venue.trim(),
         location: location.trim() || venue.trim(),
         description: description.trim(),
-        image: selectedImage,
+        image: eventImages[0],
+        images: eventImages,
         ticketTiers: ticketTiers.map((t, i) => ({
           ...t,
           id: `tier-${i}`,
@@ -140,20 +175,43 @@ export default function CreateEventScreen() {
       />
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>Imagen del Evento</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Imágenes del Evento</Text>
+          <Text style={styles.imageCount}>{eventImages.length}/4</Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
-          {defaultImages.map((img, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[styles.imageOption, selectedImage === img && styles.imageSelected]}
-              onPress={() => setSelectedImage(img)}
-            >
-              <View style={styles.imagePreview}>
-                <ImageIcon color={Colors.dark.textMuted} size={24} />
-                <Text style={styles.imageNumber}>{index + 1}</Text>
+          {eventImages.map((img, index) => (
+            <View key={index} style={styles.imageContainer}>
+              <Image source={{ uri: img }} style={styles.eventImage} />
+              {eventImages.length > 1 && (
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => removeImage(index)}
+                >
+                  <X color="#FFF" size={16} />
+                </TouchableOpacity>
+              )}
+              <View style={styles.imageIndexBadge}>
+                <Text style={styles.imageIndexText}>{index + 1}</Text>
               </View>
-            </TouchableOpacity>
+            </View>
           ))}
+          {eventImages.length < 4 && (
+            <TouchableOpacity
+              style={styles.addImageButton}
+              onPress={pickImage}
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <ActivityIndicator color={Colors.dark.primary} />
+              ) : (
+                <>
+                  <Upload color={Colors.dark.primary} size={28} />
+                  <Text style={styles.addImageText}>Subir foto</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </ScrollView>
 
         <Text style={styles.sectionTitle}>Información del Evento</Text>
@@ -369,29 +427,69 @@ const styles = StyleSheet.create({
   },
   imageScroll: {
     marginBottom: 24,
+    paddingRight: 20,
   },
-  imageOption: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: Colors.dark.card,
+  imageContainer: {
+    width: 140,
+    height: 100,
     marginRight: 12,
+    borderRadius: 12,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    position: 'relative',
   },
-  imageSelected: {
-    borderColor: Colors.dark.primary,
+  eventImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Colors.dark.border,
   },
-  imagePreview: {
-    flex: 1,
+  removeImageButton: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.dark.error,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  imageNumber: {
+  imageIndexBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageIndexText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  addImageButton: {
+    width: 140,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: Colors.dark.card,
+    borderWidth: 2,
+    borderColor: Colors.dark.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  addImageText: {
     fontSize: 12,
+    fontWeight: '600',
+    color: Colors.dark.primary,
+  },
+  imageCount: {
+    fontSize: 14,
+    fontWeight: '600',
     color: Colors.dark.textMuted,
-    marginTop: 4,
   },
   inputGroup: {
     marginBottom: 16,

@@ -1,10 +1,116 @@
 import { z } from 'zod';
 import { createTRPCRouter, publicProcedure } from '../create-context';
 import Stripe from 'stripe';
+import nodemailer from 'nodemailer';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2026-01-28.clover',
 });
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASSWORD || '',
+  },
+});
+
+async function sendTicketEmail({
+  buyerEmail,
+  buyerName,
+  eventName,
+  eventDate,
+  eventTime,
+  eventVenue,
+  tickets,
+}: {
+  buyerEmail: string;
+  buyerName: string;
+  eventName: string;
+  eventDate: string;
+  eventTime: string;
+  eventVenue: string;
+  tickets: { id: string; qrCode: string; tierName: string; price: number }[];
+}) {
+  const ticketsHtml = tickets.map(ticket => `
+    <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin: 15px 0;">
+      <h3 style="margin: 0 0 10px 0; color: #2563eb;">${ticket.tierName}</h3>
+      <p style="font-family: monospace; font-size: 18px; background: white; padding: 15px; border-radius: 8px; margin: 10px 0;">
+        ${ticket.qrCode}
+      </p>
+      <p style="color: #666; margin: 0;">Precio: €${ticket.price.toFixed(2)}</p>
+    </div>
+  `).join('');
+
+  const totalAmount = tickets.reduce((sum, t) => sum + t.price, 0);
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; text-align: center; margin-bottom: 30px; }
+        .content { background: white; padding: 30px; border-radius: 12px; }
+        .footer { text-align: center; padding: 20px; color: #999; font-size: 14px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1 style="margin: 0 0 10px 0;">¡Compra Confirmada!</h1>
+        <p style="margin: 0; opacity: 0.9;">Tus entradas para ${eventName}</p>
+      </div>
+      <div class="content">
+        <p>Hola ${buyerName},</p>
+        <p>Gracias por tu compra. Aquí están tus entradas:</p>
+        
+        <div style="background: #e8eaf6; border-radius: 12px; padding: 20px; margin: 20px 0;">
+          <h2 style="margin: 0 0 15px 0; color: #1a1a1a;">${eventName}</h2>
+          <p style="margin: 5px 0;"><strong>📅 Fecha:</strong> ${eventDate}</p>
+          <p style="margin: 5px 0;"><strong>🕐 Hora:</strong> ${eventTime}</p>
+          <p style="margin: 5px 0;"><strong>📍 Lugar:</strong> ${eventVenue}</p>
+        </div>
+
+        <h3 style="color: #1a1a1a; margin-top: 30px;">Tus Entradas (${tickets.length})</h3>
+        ${ticketsHtml}
+
+        <div style="background: #f0f9ff; border-left: 4px solid #2563eb; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; font-size: 16px;"><strong>Total pagado:</strong> €${totalAmount.toFixed(2)}</p>
+        </div>
+
+        <p style="margin-top: 30px;"><strong>Importante:</strong></p>
+        <ul style="color: #666;">
+          <li>Presenta tu código QR en la entrada del evento</li>
+          <li>Puedes mostrar este email directamente</li>
+          <li>Cada entrada tiene un código único</li>
+          <li>Llega con tiempo para evitar colas</li>
+        </ul>
+      </div>
+      <div class="footer">
+        <p>© TicketZone - Sistema de gestión de eventos</p>
+        <p>Este es un email automático, por favor no respondas.</p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"TicketZone" <${process.env.SMTP_USER || 'noreply@ticketzone.com'}>`,
+      to: buyerEmail,
+      subject: `🎫 Tus entradas para ${eventName}`,
+      html: htmlContent,
+    });
+    console.log(`Email sent successfully to ${buyerEmail}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    return false;
+  }
+}
 
 export const paymentsRouter = createTRPCRouter({
   createPaymentIntent: publicProcedure
@@ -154,9 +260,22 @@ export const paymentsRouter = createTRPCRouter({
           tickets.push({
             id: ticketId,
             qrCode,
+            tierName: tier.name,
             price: tier.price,
           });
         }
+
+        await sendTicketEmail({
+          buyerEmail: input.buyerEmail,
+          buyerName: input.buyerName,
+          eventName: event.name,
+          eventDate: event.date,
+          eventTime: event.time,
+          eventVenue: event.venue,
+          tickets,
+        }).catch(err => {
+          console.error('Failed to send ticket email:', err);
+        });
 
         return {
           success: true,

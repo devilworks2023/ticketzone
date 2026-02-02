@@ -1060,29 +1060,75 @@ const statsRouter = createTRPCRouter({
 const settingsRouter = createTRPCRouter({
   getAll: publicProcedure.query(({ ctx }) => {
     console.log('[SETTINGS] getAll called');
-    const settings = ctx.db.prepare('SELECT * FROM settings').all();
-    const result = {};
-    for (const s of settings) result[s.key] = s.value;
-    console.log('[SETTINGS] Returning settings:', Object.keys(result));
-    return result;
+    try {
+      const settings = ctx.db.prepare('SELECT * FROM settings').all();
+      const result = {};
+      for (const s of settings) result[s.key] = s.value;
+      console.log('[SETTINGS] Returning settings:', JSON.stringify(result));
+      return result;
+    } catch (error) {
+      console.error('[SETTINGS] Error getting settings:', error);
+      throw new Error('Error al obtener configuración: ' + error.message);
+    }
   }),
   set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
     console.log('[SETTINGS] set called:', input.key, '=', input.value);
-    ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).run(input.key, input.value);
-    console.log('[SETTINGS] Setting saved:', input.key);
-    return { success: true };
+    try {
+      ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).run(input.key, input.value);
+      
+      // Verificar que se guardó
+      const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(input.key);
+      console.log('[SETTINGS] Verified saved value:', input.key, '=', saved?.value);
+      
+      return { success: true, savedValue: saved?.value };
+    } catch (error) {
+      console.error('[SETTINGS] Error saving setting:', error);
+      throw new Error('Error al guardar configuración: ' + error.message);
+    }
   }),
   setMultiple: publicProcedure.input(z.record(z.string(), z.string())).mutation(({ ctx, input }) => {
-    console.log('[SETTINGS] setMultiple called with:', Object.keys(input));
-    const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
-    for (const [key, value] of Object.entries(input)) {
-      console.log('[SETTINGS] Saving:', key, '=', value);
-      stmt.run(key, value);
+    console.log('[SETTINGS] setMultiple called with:', JSON.stringify(input));
+    try {
+      const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
+      
+      const savedValues = {};
+      for (const [key, value] of Object.entries(input)) {
+        console.log('[SETTINGS] Saving:', key, '=', value);
+        stmt.run(key, value);
+        
+        // Verificar inmediatamente
+        const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+        savedValues[key] = saved?.value;
+        console.log('[SETTINGS] Verified:', key, '=', saved?.value);
+      }
+      
+      console.log('[SETTINGS] All settings saved and verified:', JSON.stringify(savedValues));
+      return { success: true, savedValues };
+    } catch (error) {
+      console.error('[SETTINGS] Error saving multiple settings:', error);
+      throw new Error('Error al guardar configuración: ' + error.message);
     }
-    console.log('[SETTINGS] All settings saved successfully');
-    return { success: true };
+  }),
+  
+  // Endpoint de debug para verificar estado de la base de datos
+  debug: publicProcedure.query(({ ctx }) => {
+    try {
+      const dbPath = process.env.DATABASE_PATH || 'unknown';
+      const settings = ctx.db.prepare('SELECT * FROM settings').all();
+      const tableInfo = ctx.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      
+      return {
+        dbPath,
+        settingsCount: settings.length,
+        settings: settings.reduce((acc, s) => ({ ...acc, [s.key]: s.value }), {}),
+        tables: tableInfo.map(t => t.name),
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      return { error: error.message };
+    }
   }),
 });
 

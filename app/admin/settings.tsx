@@ -32,6 +32,7 @@ export default function AdminSettingsScreen() {
 
   const settingsQuery = trpc.settings.getAll.useQuery();
   const updateSettingsMutation = trpc.settings.setMultiple.useMutation();
+  const debugQuery = trpc.settings.debug.useQuery(undefined, { enabled: false });
 
   useEffect(() => {
     if (settingsQuery.data) {
@@ -71,15 +72,35 @@ export default function AdminSettingsScreen() {
     
     try {
       const result = await updateSettingsMutation.mutateAsync(settingsToSave);
-      console.log('[SETTINGS] Respuesta del servidor:', result);
-      Alert.alert('Éxito', 'Configuración guardada correctamente');
-      await settingsQuery.refetch();
-      console.log('[SETTINGS] Configuración recargada');
+      console.log('[SETTINGS] Respuesta del servidor:', JSON.stringify(result));
+      
+      // Esperar un momento y recargar
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const refreshed = await settingsQuery.refetch();
+      console.log('[SETTINGS] Configuración recargada:', JSON.stringify(refreshed.data));
+      
+      Alert.alert(
+        'Éxito', 
+        `Configuración guardada correctamente.\n\nValores guardados:\n- Comisión: ${result.savedValues?.platform_commission || platformCommission}%\n- Retiro adelantado: ${result.savedValues?.early_withdrawal_fee || earlyWithdrawalFee}%`
+      );
     } catch (error: any) {
       console.error('[SETTINGS] Error guardando configuración:', error);
-      Alert.alert('Error', error.message || 'No se pudo guardar la configuración');
+      Alert.alert('Error', `No se pudo guardar: ${error.message || 'Error desconocido'}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDebug = async () => {
+    try {
+      const result = await debugQuery.refetch();
+      console.log('[DEBUG] Estado de la base de datos:', JSON.stringify(result.data, null, 2));
+      Alert.alert(
+        'Debug - Base de Datos',
+        `Ruta DB: ${result.data?.dbPath || 'N/A'}\n\nSettings guardados:\n${JSON.stringify(result.data?.settings, null, 2)}\n\nTimestamp: ${result.data?.timestamp}`
+      );
+    } catch (error: any) {
+      Alert.alert('Error Debug', error.message);
     }
   };
 
@@ -231,6 +252,13 @@ export default function AdminSettingsScreen() {
                   <Text style={styles.infoValue}>Hono + tRPC</Text>
                 </View>
               </View>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={handleDebug}
+              >
+                <Text style={styles.debugButtonText}>Verificar Estado DB</Text>
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
@@ -414,5 +442,18 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  debugButton: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    alignItems: 'center',
+  },
+  debugButtonText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 14,
   },
 });

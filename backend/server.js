@@ -209,7 +209,7 @@ function initializeDatabase(db) {
   try {
     db.exec(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`);
     console.log('>>> Migración: columna email_verified añadida a users');
-  } catch (e) {
+  } catch (_e) {
     // La columna ya existe, ignorar
   }
 
@@ -903,7 +903,6 @@ async function sendVerificationEmail(email, code, name) {
     return false;
   }
 
-  const appUrl = process.env.APP_URL || 'https://tudominio.com';
   const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   try {
@@ -964,7 +963,6 @@ async function sendTicketEmail(buyerEmail, buyerName, tickets, event, tierName) 
   }
 
   const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-  const appUrl = process.env.APP_URL || 'https://tudominio.com';
 
   const ticketsHtml = tickets.map((ticket, index) => `
     <div style="background: #f8f9fa; border-radius: 12px; padding: 20px; margin: 15px 0; border: 2px dashed #667eea;">

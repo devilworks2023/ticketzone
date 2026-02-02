@@ -35,13 +35,17 @@ export default function AdminSettingsScreen() {
 
   useEffect(() => {
     if (settingsQuery.data) {
+      console.log('[SETTINGS] Datos recibidos:', settingsQuery.data);
       setPlatformName(settingsQuery.data.platform_name || 'TicketZone');
       setCurrency(settingsQuery.data.currency || 'EUR');
       setStripeEnabled(settingsQuery.data.stripe_enabled !== 'false');
       setPlatformCommission(settingsQuery.data.platform_commission || '5');
       setEarlyWithdrawalFee(settingsQuery.data.early_withdrawal_fee || '2');
     }
-  }, [settingsQuery.data]);
+    if (settingsQuery.error) {
+      console.error('[SETTINGS] Error cargando configuración:', settingsQuery.error);
+    }
+  }, [settingsQuery.data, settingsQuery.error]);
 
   const handleSave = async () => {
     if (parseFloat(platformCommission) < 0 || parseFloat(platformCommission) > 100) {
@@ -54,17 +58,25 @@ export default function AdminSettingsScreen() {
     }
     
     setIsSaving(true);
+    
+    const settingsToSave = {
+      platform_name: platformName,
+      currency: currency,
+      stripe_enabled: stripeEnabled ? 'true' : 'false',
+      platform_commission: platformCommission,
+      early_withdrawal_fee: earlyWithdrawalFee,
+    };
+    
+    console.log('[SETTINGS] Guardando configuración:', settingsToSave);
+    
     try {
-      await updateSettingsMutation.mutateAsync({
-        platform_name: platformName,
-        currency: currency,
-        stripe_enabled: stripeEnabled ? 'true' : 'false',
-        platform_commission: platformCommission,
-        early_withdrawal_fee: earlyWithdrawalFee,
-      });
+      const result = await updateSettingsMutation.mutateAsync(settingsToSave);
+      console.log('[SETTINGS] Respuesta del servidor:', result);
       Alert.alert('Éxito', 'Configuración guardada correctamente');
-      settingsQuery.refetch();
+      await settingsQuery.refetch();
+      console.log('[SETTINGS] Configuración recargada');
     } catch (error: any) {
+      console.error('[SETTINGS] Error guardando configuración:', error);
       Alert.alert('Error', error.message || 'No se pudo guardar la configuración');
     } finally {
       setIsSaving(false);

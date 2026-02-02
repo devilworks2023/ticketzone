@@ -34,8 +34,9 @@ interface SubscriptionPlan {
   description?: string;
   maxEventsPerMonth: number;
   priceMonthly: number;
+  features?: string[];
   isActive: boolean;
-  sortOrder: number;
+  sortOrder?: number;
 }
 
 export default function AdminSubscriptionsScreen() {
@@ -98,7 +99,9 @@ export default function AdminSubscriptionsScreen() {
     }
 
     try {
+      console.log('[SUBSCRIPTIONS] Guardando plan...');
       if (editingPlan) {
+        console.log('[SUBSCRIPTIONS] Actualizando plan:', editingPlan.id);
         await updatePlanMutation.mutateAsync({
           id: editingPlan.id,
           name: formName.trim(),
@@ -108,8 +111,10 @@ export default function AdminSubscriptionsScreen() {
           isActive: formIsActive,
           sortOrder: formSortOrder ? parseInt(formSortOrder) : undefined,
         });
+        console.log('[SUBSCRIPTIONS] Plan actualizado correctamente');
         Alert.alert('Éxito', 'Plan actualizado correctamente');
       } else {
+        console.log('[SUBSCRIPTIONS] Creando nuevo plan');
         await createPlanMutation.mutateAsync({
           name: formName.trim(),
           description: formDescription.trim() || undefined,
@@ -117,6 +122,7 @@ export default function AdminSubscriptionsScreen() {
           priceMonthly: parseFloat(formPrice),
           sortOrder: formSortOrder ? parseInt(formSortOrder) : undefined,
         });
+        console.log('[SUBSCRIPTIONS] Plan creado correctamente');
         Alert.alert('Éxito', 'Plan creado correctamente');
       }
       setIsModalVisible(false);
@@ -124,6 +130,7 @@ export default function AdminSubscriptionsScreen() {
       plansQuery.refetch();
       statsQuery.refetch();
     } catch (error: any) {
+      console.error('[SUBSCRIPTIONS] Error guardando plan:', error);
       Alert.alert('Error', error.message || 'No se pudo guardar el plan');
     }
   };

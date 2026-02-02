@@ -1059,22 +1059,29 @@ const statsRouter = createTRPCRouter({
 
 const settingsRouter = createTRPCRouter({
   getAll: publicProcedure.query(({ ctx }) => {
+    console.log('[SETTINGS] getAll called');
     const settings = ctx.db.prepare('SELECT * FROM settings').all();
     const result = {};
     for (const s of settings) result[s.key] = s.value;
+    console.log('[SETTINGS] Returning settings:', Object.keys(result));
     return result;
   }),
   set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
+    console.log('[SETTINGS] set called:', input.key, '=', input.value);
     ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).run(input.key, input.value);
+    console.log('[SETTINGS] Setting saved:', input.key);
     return { success: true };
   }),
   setMultiple: publicProcedure.input(z.record(z.string(), z.string())).mutation(({ ctx, input }) => {
+    console.log('[SETTINGS] setMultiple called with:', Object.keys(input));
     const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
     for (const [key, value] of Object.entries(input)) {
+      console.log('[SETTINGS] Saving:', key, '=', value);
       stmt.run(key, value);
     }
+    console.log('[SETTINGS] All settings saved successfully');
     return { success: true };
   }),
 });
@@ -1775,45 +1782,94 @@ const authRouter = createTRPCRouter({
 
 const subscriptionsRouter = createTRPCRouter({
   getPlans: publicProcedure.query(({ ctx }) => {
+    console.log('[SUBSCRIPTIONS] getPlans called');
     const plans = ctx.db.prepare('SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY max_events ASC').all();
     return plans.map(p => ({
       id: p.id,
       name: p.name,
       price: p.price,
+      priceMonthly: p.price,
       maxEvents: p.max_events,
+      maxEventsPerMonth: p.max_events,
       description: p.description,
       features: p.features ? JSON.parse(p.features) : [],
       isActive: p.is_active === 1,
+      sortOrder: 0,
     }));
   }),
 
   getAllPlans: publicProcedure.query(({ ctx }) => {
+    console.log('[SUBSCRIPTIONS] getAllPlans called');
     const plans = ctx.db.prepare('SELECT * FROM subscription_plans ORDER BY max_events ASC').all();
     return plans.map(p => ({
       id: p.id,
       name: p.name,
       price: p.price,
+      priceMonthly: p.price,
       maxEvents: p.max_events,
+      maxEventsPerMonth: p.max_events,
       description: p.description,
       features: p.features ? JSON.parse(p.features) : [],
       isActive: p.is_active === 1,
+      sortOrder: 0,
+    }));
+  }),
+
+  listPlans: publicProcedure.query(({ ctx }) => {
+    console.log('[SUBSCRIPTIONS] listPlans called');
+    const plans = ctx.db.prepare('SELECT * FROM subscription_plans WHERE is_active = 1 ORDER BY max_events ASC').all();
+    return plans.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      priceMonthly: p.price,
+      maxEvents: p.max_events,
+      maxEventsPerMonth: p.max_events,
+      description: p.description,
+      features: p.features ? JSON.parse(p.features) : [],
+      isActive: p.is_active === 1,
+      sortOrder: 0,
+    }));
+  }),
+
+  listAllPlans: publicProcedure.query(({ ctx }) => {
+    console.log('[SUBSCRIPTIONS] listAllPlans called');
+    const plans = ctx.db.prepare('SELECT * FROM subscription_plans ORDER BY max_events ASC').all();
+    return plans.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      priceMonthly: p.price,
+      maxEvents: p.max_events,
+      maxEventsPerMonth: p.max_events,
+      description: p.description,
+      features: p.features ? JSON.parse(p.features) : [],
+      isActive: p.is_active === 1,
+      sortOrder: 0,
     }));
   }),
 
   createPlan: publicProcedure
     .input(z.object({
       name: z.string(),
-      price: z.number().min(0),
-      maxEvents: z.number().min(1),
+      price: z.number().min(0).optional(),
+      priceMonthly: z.number().min(0).optional(),
+      maxEvents: z.number().min(1).optional(),
+      maxEventsPerMonth: z.number().min(1).optional(),
       description: z.string().optional(),
       features: z.array(z.string()).optional(),
+      sortOrder: z.number().optional(),
     }))
     .mutation(({ ctx, input }) => {
+      console.log('[SUBSCRIPTIONS] createPlan called with:', input);
       const id = `plan_${Date.now()}`;
+      const price = input.priceMonthly ?? input.price ?? 0;
+      const maxEvents = input.maxEventsPerMonth ?? input.maxEvents ?? 1;
       ctx.db.prepare(`
         INSERT INTO subscription_plans (id, name, price, max_events, description, features, is_active)
         VALUES (?, ?, ?, ?, ?, ?, 1)
-      `).run(id, input.name, input.price, input.maxEvents, input.description || '', JSON.stringify(input.features || []));
+      `).run(id, input.name, price, maxEvents, input.description || '', JSON.stringify(input.features || []));
+      console.log('[SUBSCRIPTIONS] Plan created:', id);
       return { id, success: true };
     }),
 
@@ -1822,18 +1878,24 @@ const subscriptionsRouter = createTRPCRouter({
       id: z.string(),
       name: z.string().optional(),
       price: z.number().min(0).optional(),
+      priceMonthly: z.number().min(0).optional(),
       maxEvents: z.number().min(1).optional(),
+      maxEventsPerMonth: z.number().min(1).optional(),
       description: z.string().optional(),
       features: z.array(z.string()).optional(),
       isActive: z.boolean().optional(),
+      sortOrder: z.number().optional(),
     }))
     .mutation(({ ctx, input }) => {
+      console.log('[SUBSCRIPTIONS] updatePlan called with:', input);
       const updates = [];
       const values = [];
 
       if (input.name !== undefined) { updates.push('name = ?'); values.push(input.name); }
-      if (input.price !== undefined) { updates.push('price = ?'); values.push(input.price); }
-      if (input.maxEvents !== undefined) { updates.push('max_events = ?'); values.push(input.maxEvents); }
+      const price = input.priceMonthly ?? input.price;
+      if (price !== undefined) { updates.push('price = ?'); values.push(price); }
+      const maxEvents = input.maxEventsPerMonth ?? input.maxEvents;
+      if (maxEvents !== undefined) { updates.push('max_events = ?'); values.push(maxEvents); }
       if (input.description !== undefined) { updates.push('description = ?'); values.push(input.description); }
       if (input.features !== undefined) { updates.push('features = ?'); values.push(JSON.stringify(input.features)); }
       if (input.isActive !== undefined) { updates.push('is_active = ?'); values.push(input.isActive ? 1 : 0); }
@@ -1841,6 +1903,7 @@ const subscriptionsRouter = createTRPCRouter({
       if (updates.length > 0) {
         values.push(input.id);
         ctx.db.prepare(`UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        console.log('[SUBSCRIPTIONS] Plan updated:', input.id);
       }
       return { success: true };
     }),

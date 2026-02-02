@@ -91,7 +91,8 @@ export default function AdminPromotersManageScreen() {
           Alert.alert('Error', 'La comisión debe ser un número entre 0 y 100');
           return;
         }
-        await updateMutation.mutateAsync({
+        console.log('[PROMOTERS] Actualizando promotor:', editingPromoter.id);
+        const result = await updateMutation.mutateAsync({
           id: editingPromoter.id,
           name: formName.trim(),
           phone: formPhone.trim() || undefined,
@@ -101,21 +102,25 @@ export default function AdminPromotersManageScreen() {
           billingModel: formBillingModel,
           isActive: formIsActive,
         });
+        console.log('[PROMOTERS] Respuesta:', result);
         Alert.alert('Éxito', 'Promotor actualizado correctamente');
       } else {
-        await createMutation.mutateAsync({
+        console.log('[PROMOTERS] Creando nuevo promotor');
+        const result = await createMutation.mutateAsync({
           name: formName.trim(),
           email: formEmail.trim().toLowerCase(),
           phone: formPhone.trim() || undefined,
           companyName: formCompanyName.trim() || undefined,
           taxId: formTaxId.trim() || undefined,
         });
+        console.log('[PROMOTERS] Respuesta:', result);
         Alert.alert('Éxito', 'Promotor creado correctamente');
       }
       setIsModalVisible(false);
       resetForm();
-      promotersQuery.refetch();
+      await promotersQuery.refetch();
     } catch (error: any) {
+      console.error('[PROMOTERS] Error:', error);
       Alert.alert('Error', error.message || 'No se pudo guardar');
     }
   };

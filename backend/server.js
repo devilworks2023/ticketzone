@@ -591,6 +591,200 @@ const sellersRouter = createTRPCRouter({
     return { id: seller.id, name: seller.name, code: seller.code };
   }),
 
+  login: publicProcedure.input(z.object({
+    code: z.string(),
+  })).mutation(({ ctx, input }) => {
+    const seller = ctx.db.prepare('SELECT * FROM sellers WHERE code = ? AND is_active = 1').get(input.code.toUpperCase());
+    if (!seller) {
+      throw new Error('Código de vendedor no encontrado o inactivo');
+    }
+    const commissions = ctx.db.prepare('SELECT * FROM seller_commissions WHERE seller_id = ? ORDER BY min_sales ASC').all(seller.id);
+    return {
+      success: true,
+      seller: {
+        id: seller.id,
+        name: seller.name,
+        email: seller.email,
+        phone: seller.phone,
+        code: seller.code,
+        totalSales: seller.total_sales,
+        totalRevenue: seller.total_revenue,
+        isActive: Boolean(seller.is_active),
+        createdAt: seller.created_at,
+        commissionTiers: commissions.map(c => ({
+          minSales: c.min_sales, maxSales: c.max_sales, percentage: c.percentage,
+        })),
+      },
+    };
+  }),
+
+  getDashboard: publicProcedure.input(z.object({
+    sellerId: z.string(),
+  })).query(({ ctx, input }) => {
+    const seller = ctx.db.prepare('SELECT * FROM sellers WHERE id = ? AND is_active = 1').get(input.sellerId);
+    if (!seller) throw new Error('Vendedor no encontrado');
+
+    const commissions = ctx.db.prepare('SELECT * FROM seller_commissions WHERE seller_id = ? ORDER BY min_sales ASC').all(seller.id);
+    
+    // Calcular comisión actual basada en ventas totales
+    let currentCommissionPercent = 0;
+    for (const comm of commissions) {
+      if (seller.total_sales >= comm.min_sales && (comm.max_sales === null || seller.total_sales < comm.max_sales)) {
+        currentCommissionPercent = comm.percentage;
+        break;
+      }
+    }
+
+    // Estadísticas de hoy
+    const todayStats = ctx.db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(price), 0) as revenue, COALESCE(SUM(seller_commission), 0) as commission
+      FROM tickets WHERE seller_id = ? AND date(purchase_date) = date('now')
+    `).get(input.sellerId);
+
+    // Estadísticas de esta semana
+    const weekStats = ctx.db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(price), 0) as revenue, COALESCE(SUM(seller_commission), 0) as commission
+      FROM tickets WHERE seller_id = ? AND purchase_date >= date('now', '-7 days')
+    `).get(input.sellerId);
+
+    // Estadísticas de este mes
+    const monthStats = ctx.db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(price), 0) as revenue, COALESCE(SUM(seller_commission), 0) as commission
+      FROM tickets WHERE seller_id = ? AND purchase_date >= date('now', 'start of month')
+    `).get(input.sellerId);
+
+    // Estadísticas totales
+    const totalStats = ctx.db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(price), 0) as revenue, COALESCE(SUM(seller_commission), 0) as commission
+      FROM tickets WHERE seller_id = ?
+    `).get(input.sellerId);
+
+    // Ventas por día (últimos 30 días)
+    const dailySales = ctx.db.prepare(`
+      SELECT date(purchase_date) as date, COUNT(*) as count, 
+             COALESCE(SUM(price), 0) as revenue, COALESCE(SUM(seller_commission), 0) as commission
+      FROM tickets WHERE seller_id = ? AND purchase_date >= date('now', '-30 days')
+      GROUP BY date(purchase_date)
+      ORDER BY date DESC
+    `).all(input.sellerId);
+
+    // Ventas por evento
+    const salesByEvent = ctx.db.prepare(`
+      SELECT e.id, e.name as eventName, e.date as eventDate, e.venue,
+             COUNT(t.id) as ticketsSold, COALESCE(SUM(t.price), 0) as revenue,
+             COALESCE(SUM(t.seller_commission), 0) as commission
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      WHERE t.seller_id = ?
+      GROUP BY e.id
+      ORDER BY e.date DESC
+    `).all(input.sellerId);
+
+    // Próximo tramo de comisión
+    let nextTier = null;
+    for (const comm of commissions) {
+      if (seller.total_sales < comm.min_sales) {
+        nextTier = {
+          minSales: comm.min_sales,
+          percentage: comm.percentage,
+          salesNeeded: comm.min_sales - seller.total_sales,
+        };
+        break;
+      }
+    }
+
+    return {
+      seller: {
+        id: seller.id,
+        name: seller.name,
+        email: seller.email,
+        code: seller.code,
+        totalSales: seller.total_sales,
+        totalRevenue: seller.total_revenue,
+      },
+      currentCommissionPercent,
+      commissionTiers: commissions.map(c => ({
+        minSales: c.min_sales, maxSales: c.max_sales, percentage: c.percentage,
+      })),
+      nextTier,
+      stats: {
+        today: { sales: todayStats.count, revenue: todayStats.revenue, commission: todayStats.commission },
+        week: { sales: weekStats.count, revenue: weekStats.revenue, commission: weekStats.commission },
+        month: { sales: monthStats.count, revenue: monthStats.revenue, commission: monthStats.commission },
+        total: { sales: totalStats.count, revenue: totalStats.revenue, commission: totalStats.commission },
+      },
+      dailySales: dailySales.map(d => ({
+        date: d.date, sales: d.count, revenue: d.revenue, commission: d.commission,
+      })),
+      salesByEvent: salesByEvent.map(e => ({
+        id: e.id, eventName: e.eventName, eventDate: e.eventDate, venue: e.venue,
+        ticketsSold: e.ticketsSold, revenue: e.revenue, commission: e.commission,
+      })),
+    };
+  }),
+
+  getSalesHistory: publicProcedure.input(z.object({
+    sellerId: z.string(),
+    limit: z.number().optional().default(50),
+    offset: z.number().optional().default(0),
+  })).query(({ ctx, input }) => {
+    const tickets = ctx.db.prepare(`
+      SELECT t.*, e.name as event_name, e.date as event_date, e.venue,
+             tt.name as tier_name
+      FROM tickets t
+      JOIN events e ON t.event_id = e.id
+      JOIN ticket_tiers tt ON t.tier_id = tt.id
+      WHERE t.seller_id = ?
+      ORDER BY t.purchase_date DESC
+      LIMIT ? OFFSET ?
+    `).all(input.sellerId, input.limit, input.offset);
+
+    const totalCount = ctx.db.prepare('SELECT COUNT(*) as count FROM tickets WHERE seller_id = ?').get(input.sellerId);
+
+    return {
+      tickets: tickets.map(t => ({
+        id: t.id,
+        eventName: t.event_name,
+        eventDate: t.event_date,
+        venue: t.venue,
+        tierName: t.tier_name,
+        buyerName: t.buyer_name,
+        buyerEmail: t.buyer_email,
+        price: t.price,
+        sellerCommission: t.seller_commission,
+        purchaseDate: t.purchase_date,
+        isUsed: Boolean(t.is_used),
+      })),
+      total: totalCount.count,
+      hasMore: input.offset + input.limit < totalCount.count,
+    };
+  }),
+
+  getPayouts: publicProcedure.input(z.object({
+    sellerId: z.string(),
+  })).query(({ ctx, input }) => {
+    const payouts = ctx.db.prepare('SELECT * FROM seller_payouts WHERE seller_id = ? ORDER BY created_at DESC').all(input.sellerId);
+    
+    const pendingCommission = ctx.db.prepare(`
+      SELECT COALESCE(SUM(seller_commission), 0) as total
+      FROM tickets 
+      WHERE seller_id = ? AND purchase_date > COALESCE(
+        (SELECT MAX(completed_at) FROM seller_payouts WHERE seller_id = ? AND status = 'completed'), '1970-01-01'
+      )
+    `).get(input.sellerId, input.sellerId);
+
+    return {
+      payouts: payouts.map(p => ({
+        id: p.id,
+        amount: p.amount,
+        status: p.status,
+        createdAt: p.created_at,
+        completedAt: p.completed_at,
+      })),
+      pendingCommission: pendingCommission.total,
+    };
+  }),
+
   create: publicProcedure.input(z.object({
     name: z.string(), email: z.string().email(), phone: z.string().optional(), code: z.string(),
   })).mutation(({ ctx, input }) => {
@@ -615,6 +809,41 @@ const sellersRouter = createTRPCRouter({
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
     ctx.db.prepare('DELETE FROM sellers WHERE id = ?').run(input.id);
+    return { success: true };
+  }),
+
+  update: publicProcedure.input(z.object({
+    id: z.string(),
+    name: z.string().optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    isActive: z.boolean().optional(),
+    commissionTiers: z.array(z.object({
+      minSales: z.number(),
+      maxSales: z.number().nullable(),
+      percentage: z.number(),
+    })).optional(),
+  })).mutation(({ ctx, input }) => {
+    const { id, commissionTiers, ...updates } = input;
+    const fields = []; const values = [];
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.email !== undefined) { fields.push('email = ?'); values.push(updates.email); }
+    if (updates.phone !== undefined) { fields.push('phone = ?'); values.push(updates.phone); }
+    if (updates.isActive !== undefined) { fields.push('is_active = ?'); values.push(updates.isActive ? 1 : 0); }
+    
+    if (fields.length > 0) {
+      fields.push('updated_at = CURRENT_TIMESTAMP'); values.push(id);
+      ctx.db.prepare(`UPDATE sellers SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    if (commissionTiers && commissionTiers.length > 0) {
+      ctx.db.prepare('DELETE FROM seller_commissions WHERE seller_id = ?').run(id);
+      const insertComm = ctx.db.prepare('INSERT INTO seller_commissions (id, seller_id, min_sales, max_sales, percentage) VALUES (?, ?, ?, ?, ?)');
+      for (const tier of commissionTiers) {
+        insertComm.run(`comm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, id, tier.minSales, tier.maxSales, tier.percentage);
+      }
+    }
+
     return { success: true };
   }),
 });

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Lock, Mail, Ticket, Eye, EyeOff, UserPlus, Key } from 'lucide-react-native';
+import { Lock, Mail, Ticket, Eye, EyeOff, UserPlus, Key, Users } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
 
@@ -131,12 +131,22 @@ export default function LoginScreen() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.buyerButton} onPress={handleBuyerAccess}>
-              <Text style={styles.buyerButtonText}>Soy Comprador</Text>
-            </TouchableOpacity>
+            <View style={styles.accessButtons}>
+              <TouchableOpacity style={styles.buyerButton} onPress={handleBuyerAccess}>
+                <Text style={styles.buyerButtonText}>Soy Comprador</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.sellerButton} 
+                onPress={() => router.push('/seller/login')}
+              >
+                <Users color={Colors.dark.secondary} size={18} />
+                <Text style={styles.sellerButtonText}>Portal Vendedor</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.buyerHint}>
-              Compra entradas y consulta tus compras con tu cuenta
+              Accede como comprador o vendedor según tu rol
             </Text>
 
             <View style={styles.registerSection}>
@@ -271,10 +281,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 13,
   },
+  accessButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   buyerButton: {
+    flex: 1,
     backgroundColor: 'transparent',
     borderRadius: 12,
-    height: 52,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -282,7 +297,22 @@ const styles = StyleSheet.create({
   },
   buyerButtonText: {
     color: Colors.dark.secondary,
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sellerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: Colors.dark.secondary + '15',
+    borderRadius: 12,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  sellerButtonText: {
+    color: Colors.dark.secondary,
+    fontSize: 14,
     fontWeight: '600',
   },
   buyerHint: {

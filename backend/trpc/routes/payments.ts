@@ -331,14 +331,42 @@ export const paymentsRouter = createTRPCRouter({
 
   createConnectOnboardingLink: publicProcedure
     .input(z.object({
-      accountId: z.string(),
+      promoterId: z.string(),
       returnUrl: z.string(),
       refreshUrl: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       try {
+        const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId) as any;
+        if (!promoter) throw new Error('Promotor no encontrado');
+
+        let accountId = promoter.stripe_account_id;
+
+        // Create new Connect account if doesn't exist
+        if (!accountId) {
+          const account = await stripe.accounts.create({
+            type: 'express',
+            country: 'ES',
+            email: promoter.email,
+            capabilities: {
+              card_payments: { requested: true },
+              transfers: { requested: true },
+            },
+            business_type: 'individual',
+            metadata: {
+              promoterId: promoter.id,
+            },
+          });
+
+          accountId = account.id;
+          ctx.db.prepare('UPDATE promoters SET stripe_account_id = ?, stripe_account_status = ? WHERE id = ?')
+            .run(accountId, 'pending', input.promoterId);
+          
+          console.log('[STRIPE] Created Connect account:', accountId);
+        }
+
         const accountLink = await stripe.accountLinks.create({
-          account: input.accountId,
+          account: accountId,
           refresh_url: input.refreshUrl,
           return_url: input.returnUrl,
           type: 'account_onboarding',
@@ -346,6 +374,7 @@ export const paymentsRouter = createTRPCRouter({
 
         return {
           url: accountLink.url,
+          accountId,
           success: true,
         };
       } catch (error: any) {
@@ -403,5 +432,138 @@ export const paymentsRouter = createTRPCRouter({
         createdAt: p.created_at,
         completedAt: p.completed_at,
       }));
+    }),
+
+  getPromoterPayouts: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(({ ctx, input }) => {
+      const payouts = ctx.db.prepare(`
+        SELECT * FROM promoter_payouts
+        WHERE promoter_id = ?
+        ORDER BY created_at DESC
+      `).all(input.promoterId) as any[];
+
+      return payouts.map(p => ({
+        id: p.id,
+        amount: p.amount,
+        stripeTransferId: p.stripe_transfer_id,
+        status: p.status,
+        createdAt: p.created_at,
+        completedAt: p.completed_at,
+      }));
+    }),
+
+  checkConnectStatus: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId) as any;
+      
+      if (!promoter || !promoter.stripe_account_id) {
+        return {
+          connected: false,
+          status: 'no_account',
+          chargesEnabled: false,
+          payoutsEnabled: false,
+          detailsSubmitted: false,
+          accountId: null,
+        };
+      }
+
+      try {
+        const account = await stripe.accounts.retrieve(promoter.stripe_account_id);
+        const isActive = account.charges_enabled && account.payouts_enabled;
+        const newStatus = isActive ? 'active' : 'pending';
+
+        if (promoter.stripe_account_status !== newStatus) {
+          ctx.db.prepare('UPDATE promoters SET stripe_account_status = ? WHERE id = ?')
+            .run(newStatus, input.promoterId);
+        }
+
+        return {
+          connected: true,
+          status: newStatus,
+          chargesEnabled: account.charges_enabled,
+          payoutsEnabled: account.payouts_enabled,
+          detailsSubmitted: account.details_submitted,
+          accountId: promoter.stripe_account_id,
+        };
+      } catch (error: any) {
+        console.error('Check connect status error:', error);
+        return {
+          connected: false,
+          status: 'error',
+          chargesEnabled: false,
+          payoutsEnabled: false,
+          detailsSubmitted: false,
+          accountId: promoter.stripe_account_id,
+          error: error.message,
+        };
+      }
+    }),
+
+  getConnectDashboardLink: publicProcedure
+    .input(z.object({ promoterId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId) as any;
+      
+      if (!promoter || !promoter.stripe_account_id) {
+        throw new Error('El promotor no tiene cuenta de Stripe');
+      }
+
+      try {
+        const loginLink = await stripe.accounts.createLoginLink(promoter.stripe_account_id);
+        return { url: loginLink.url };
+      } catch (error: any) {
+        console.error('Create dashboard link error:', error);
+        throw new Error(`Error al crear enlace: ${error.message}`);
+      }
+    }),
+
+  createPayout: publicProcedure
+    .input(z.object({
+      promoterId: z.string(),
+      amount: z.number().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId) as any;
+      
+      if (!promoter) throw new Error('Promotor no encontrado');
+      if (!promoter.stripe_account_id || promoter.stripe_account_status !== 'active') {
+        throw new Error('El promotor no tiene una cuenta de Stripe activa');
+      }
+
+      const payoutId = `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const amountInCents = Math.round(input.amount * 100);
+
+      try {
+        const transfer = await stripe.transfers.create({
+          amount: amountInCents,
+          currency: 'eur',
+          destination: promoter.stripe_account_id,
+          metadata: {
+            payoutId,
+            promoterId: input.promoterId,
+          },
+        });
+
+        ctx.db.prepare(`
+          INSERT INTO promoter_payouts (id, promoter_id, amount, stripe_transfer_id, status, completed_at)
+          VALUES (?, ?, ?, ?, 'completed', CURRENT_TIMESTAMP)
+        `).run(payoutId, input.promoterId, input.amount, transfer.id);
+
+        // Reset pending payout for promoter
+        // This is simplified - in production you'd track which tickets are paid out
+        
+        return { id: payoutId, transferId: transfer.id, success: true };
+      } catch (error: any) {
+        console.error('Create payout error:', error);
+        
+        ctx.db.prepare(`
+          INSERT INTO promoter_payouts (id, promoter_id, amount, status)
+          VALUES (?, ?, ?, 'failed')
+        `).run(payoutId, input.promoterId, input.amount);
+
+        throw new Error(`Error al crear el pago: ${error.message}`);
+      }
     }),
 });

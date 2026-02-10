@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, Linking, Platform } from 'react-native';
 import { Stack } from 'expo-router';
-import { DollarSign, Clock, CheckCircle, XCircle, Filter } from 'lucide-react-native';
+import { DollarSign, Clock, CheckCircle, XCircle, Filter, ExternalLink, Wallet } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
+import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Payout {
   id: string;
@@ -15,52 +18,100 @@ interface Payout {
 }
 
 export default function PayoutsScreen() {
+  const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
   
-  const [payouts] = useState<Payout[]>([
-    {
-      id: '1',
-      amount: 1250.00,
-      status: 'processing',
-      createdAt: '2026-01-30T10:00:00',
+  const promotersQuery = trpc.promoters.list.useQuery();
+  const currentPromoter = promotersQuery.data?.find(
+    p => p.email.toLowerCase() === user?.email?.toLowerCase()
+  );
+
+  const payoutsQuery = trpc.payments.getPromoterPayouts.useQuery(
+    { promoterId: currentPromoter?.id || '' },
+    { enabled: !!currentPromoter?.id }
+  );
+
+  const connectStatusQuery = trpc.payments.checkConnectStatus.useQuery(
+    { promoterId: currentPromoter?.id || '' },
+    { enabled: !!currentPromoter?.id }
+  );
+
+  const dashboardLinkQuery = trpc.payments.getConnectDashboardLink.useQuery(
+    { promoterId: currentPromoter?.id || '' },
+    { enabled: !!currentPromoter?.id && connectStatusQuery.data?.status === 'active' }
+  );
+
+  const createPayoutMutation = trpc.payments.createPayout.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Pago solicitado correctamente');
+      payoutsQuery.refetch();
+      promotersQuery.refetch();
     },
-    {
-      id: '2',
-      amount: 890.50,
-      status: 'completed',
-      createdAt: '2026-01-25T14:30:00',
-      completedAt: '2026-01-26T09:15:00',
-      stripeTransferId: 'tr_1234567890',
+    onError: (error) => {
+      Alert.alert('Error', error.message);
     },
-    {
-      id: '3',
-      amount: 1540.00,
-      status: 'completed',
-      createdAt: '2026-01-18T11:20:00',
-      completedAt: '2026-01-19T10:00:00',
-      stripeTransferId: 'tr_0987654321',
-    },
-    {
-      id: '4',
-      amount: 675.25,
-      status: 'completed',
-      createdAt: '2026-01-10T16:45:00',
-      completedAt: '2026-01-11T08:30:00',
-      stripeTransferId: 'tr_1122334455',
-    },
-    {
-      id: '5',
-      amount: 320.00,
-      status: 'failed',
-      createdAt: '2026-01-05T09:00:00',
-    },
-  ]);
+  });
+
+  const payouts: Payout[] = payoutsQuery.data?.map(p => ({
+    id: p.id,
+    amount: p.amount,
+    status: p.status as Payout['status'],
+    createdAt: p.createdAt,
+    completedAt: p.completedAt || undefined,
+    stripeTransferId: p.stripeTransferId || undefined,
+  })) || [];
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await Promise.all([
+      payoutsQuery.refetch(),
+      promotersQuery.refetch(),
+      connectStatusQuery.refetch(),
+    ]);
     setRefreshing(false);
+  };
+
+  const handleRequestPayout = () => {
+    if (!currentPromoter) return;
+    
+    const pendingAmount = currentPromoter.pendingPayout || 0;
+    if (pendingAmount <= 0) {
+      Alert.alert('Info', 'No tienes saldo pendiente para retirar');
+      return;
+    }
+
+    if (connectStatusQuery.data?.status !== 'active') {
+      Alert.alert('Error', 'Necesitas conectar tu cuenta de Stripe primero');
+      return;
+    }
+
+    Alert.alert(
+      'Solicitar pago',
+      `¿Deseas solicitar el pago de ${formatCurrency(pendingAmount)}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Solicitar',
+          onPress: () => {
+            createPayoutMutation.mutate({
+              promoterId: currentPromoter.id,
+              amount: pendingAmount,
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenStripeDashboard = async () => {
+    if (dashboardLinkQuery.data?.url) {
+      if (Platform.OS === 'web') {
+        window.open(dashboardLinkQuery.data.url, '_blank');
+      } else {
+        await Linking.openURL(dashboardLinkQuery.data.url);
+      }
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -98,7 +149,17 @@ export default function PayoutsScreen() {
   });
 
   const totalCompleted = payouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
-  const totalPending = payouts.filter(p => p.status === 'pending' || p.status === 'processing').reduce((sum, p) => sum + p.amount, 0);
+  const availableForPayout = currentPromoter?.pendingPayout || 0;
+
+  const loading = promotersQuery.isLoading || payoutsQuery.isLoading;
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.dark.primary} />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -130,13 +191,47 @@ export default function PayoutsScreen() {
             <Text style={styles.summaryValue}>{formatCurrency(totalCompleted)}</Text>
           </View>
           <View style={styles.summaryCard}>
-            <View style={[styles.summaryIcon, { backgroundColor: Colors.dark.secondary + '20' }]}>
-              <Clock color={Colors.dark.secondary} size={20} />
+            <View style={[styles.summaryIcon, { backgroundColor: Colors.dark.primary + '20' }]}>
+              <Wallet color={Colors.dark.primary} size={20} />
             </View>
-            <Text style={styles.summaryLabel}>Pendiente</Text>
-            <Text style={styles.summaryValue}>{formatCurrency(totalPending)}</Text>
+            <Text style={styles.summaryLabel}>Disponible</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(availableForPayout)}</Text>
           </View>
         </View>
+
+        {availableForPayout > 0 && connectStatusQuery.data?.status === 'active' && (
+          <TouchableOpacity
+            style={styles.payoutButton}
+            onPress={handleRequestPayout}
+            disabled={createPayoutMutation.isPending}
+          >
+            <LinearGradient
+              colors={Colors.dark.gradient.primary as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.payoutButtonGradient}
+            >
+              {createPayoutMutation.isPending ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <DollarSign color="#FFF" size={20} />
+                  <Text style={styles.payoutButtonText}>Solicitar pago de {formatCurrency(availableForPayout)}</Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
+        {connectStatusQuery.data?.status === 'active' && dashboardLinkQuery.data?.url && (
+          <TouchableOpacity
+            style={styles.stripeDashboardButton}
+            onPress={handleOpenStripeDashboard}
+          >
+            <ExternalLink color={Colors.dark.primary} size={18} />
+            <Text style={styles.stripeDashboardText}>Abrir panel de Stripe</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.filterSection}>
           <Filter color={Colors.dark.textMuted} size={16} />
@@ -208,6 +303,46 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Colors.dark.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payoutButton: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  payoutButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 10,
+  },
+  payoutButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  stripeDashboardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: Colors.dark.primary + '15',
+    borderRadius: 12,
+  },
+  stripeDashboardText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.dark.primary,
   },
   summarySection: {
     flexDirection: 'row',

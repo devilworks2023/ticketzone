@@ -18,7 +18,6 @@ export default function ConnectStripeScreen() {
   const [step, setStep] = useState<'intro' | 'connecting' | 'success'>('intro');
   
 
-  const createConnectAccount = trpc.payments.createConnectAccount.useMutation();
   const createOnboardingLink = trpc.payments.createConnectOnboardingLink.useMutation();
 
   const handleConnectStripe = async () => {
@@ -31,22 +30,14 @@ export default function ConnectStripeScreen() {
     setStep('connecting');
 
     try {
-      const accountResult = await createConnectAccount.mutateAsync({
-        promoterId,
-        email: promoterEmail,
-        businessName: promoterName,
-      });
-
-      
-
       const baseUrl = Platform.OS === 'web' 
         ? window.location.origin 
         : 'https://tickets.devil-works.com';
 
       const linkResult = await createOnboardingLink.mutateAsync({
-        accountId: accountResult.accountId,
+        promoterId,
         returnUrl: `${baseUrl}/promoter/dashboard?connected=true&promoterId=${promoterId}`,
-        refreshUrl: `${baseUrl}/promoter/connect-stripe?promoterId=${promoterId}&email=${promoterEmail}&name=${promoterName}`,
+        refreshUrl: `${baseUrl}/promoter/connect-stripe?promoterId=${promoterId}&email=${encodeURIComponent(promoterEmail)}&name=${encodeURIComponent(promoterName)}`,
       });
 
       if (Platform.OS === 'web') {

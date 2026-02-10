@@ -10,6 +10,18 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import Stripe from 'stripe';
+
+// Initialize Stripe
+const stripe = process.env.STRIPE_SECRET_KEY 
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' })
+  : null;
+
+if (!stripe) {
+  console.warn('⚠️  STRIPE_SECRET_KEY no configurada - Los pagos no funcionarán');
+} else {
+  console.log('✓ Stripe inicializado correctamente');
+}
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'ticketzone.db');
 
@@ -970,7 +982,11 @@ const paymentsRouter = createTRPCRouter({
     buyerEmail: z.string(),
     buyerPhone: z.string().optional(),
     sellerCode: z.string().optional(),
-  })).mutation(({ ctx, input }) => {
+  })).mutation(async ({ ctx, input }) => {
+    if (!stripe) {
+      throw new Error('Stripe no está configurado. Contacta al administrador.');
+    }
+
     const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
     if (!tier) throw new Error('Tipo de entrada no encontrado');
     if (tier.sold + input.quantity > tier.quantity) throw new Error('No hay suficientes entradas disponibles');
@@ -980,29 +996,77 @@ const paymentsRouter = createTRPCRouter({
     if (!event) throw new Error('Evento no encontrado');
 
     const totalAmount = tier.price * input.quantity;
-    const platformCommission = event.commission_percentage || 5;
-    const platformFee = totalAmount * (platformCommission / 100);
+    
+    // Get platform commission from settings
+    const platformCommissionSetting = ctx.db.prepare("SELECT value FROM settings WHERE key = 'platform_commission'").get();
+    const platformCommissionPercent = parseFloat(platformCommissionSetting?.value || '5');
+    const platformFee = totalAmount * (platformCommissionPercent / 100);
     const promoterAmount = totalAmount - platformFee;
 
-    const paymentIntentId = `pi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const amountInCents = Math.round(totalAmount * 100);
+    const platformFeeInCents = Math.round(platformFee * 100);
 
-    return {
-      paymentIntentId,
-      clientSecret: `${paymentIntentId}_secret_${Math.random().toString(36).substr(2, 16)}`,
-      amount: Math.round(totalAmount * 100),
-      currency: 'eur',
-      platformFee: Math.round(platformFee * 100),
-      promoterAmount: Math.round(promoterAmount * 100),
-      stripeAccountId: event.stripe_account_id,
-      metadata: {
-        eventId: input.eventId,
-        tierId: input.tierId,
-        quantity: input.quantity,
-        buyerName: input.buyerName,
-        buyerEmail: input.buyerEmail,
-        sellerCode: input.sellerCode || null,
-      },
-    };
+    console.log('[STRIPE] Creating PaymentIntent:', {
+      amount: amountInCents,
+      platformFee: platformFeeInCents,
+      eventId: input.eventId,
+      buyerEmail: input.buyerEmail,
+    });
+
+    try {
+      const paymentIntentParams = {
+        amount: amountInCents,
+        currency: 'eur',
+        automatic_payment_methods: {
+          enabled: true,
+        },
+        metadata: {
+          eventId: input.eventId,
+          tierId: input.tierId,
+          quantity: String(input.quantity),
+          buyerName: input.buyerName,
+          buyerEmail: input.buyerEmail,
+          buyerPhone: input.buyerPhone || '',
+          sellerCode: input.sellerCode || '',
+        },
+        receipt_email: input.buyerEmail,
+        description: `${input.quantity}x entradas para ${event.name}`,
+      };
+
+      // If promoter has Stripe Connect, use transfer_data for split payments
+      if (event.stripe_account_id && event.stripe_account_status === 'active') {
+        paymentIntentParams.transfer_data = {
+          destination: event.stripe_account_id,
+        };
+        paymentIntentParams.application_fee_amount = platformFeeInCents;
+        console.log('[STRIPE] Using Stripe Connect with destination:', event.stripe_account_id);
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+
+      console.log('[STRIPE] PaymentIntent created:', paymentIntent.id);
+
+      return {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount: amountInCents,
+        currency: 'eur',
+        platformFee: platformFeeInCents,
+        promoterAmount: Math.round(promoterAmount * 100),
+        stripeAccountId: event.stripe_account_id,
+        metadata: {
+          eventId: input.eventId,
+          tierId: input.tierId,
+          quantity: input.quantity,
+          buyerName: input.buyerName,
+          buyerEmail: input.buyerEmail,
+          sellerCode: input.sellerCode || null,
+        },
+      };
+    } catch (error) {
+      console.error('[STRIPE] Error creating PaymentIntent:', error);
+      throw new Error(`Error al crear el pago: ${error.message}`);
+    }
   }),
 
   confirmPayment: publicProcedure.input(z.object({
@@ -1097,7 +1161,11 @@ const paymentsRouter = createTRPCRouter({
 
   createPayout: publicProcedure.input(z.object({
     promoterId: z.string(), amount: z.number().min(1),
-  })).mutation(({ ctx, input }) => {
+  })).mutation(async ({ ctx, input }) => {
+    if (!stripe) {
+      throw new Error('Stripe no está configurado');
+    }
+
     const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId);
     if (!promoter) throw new Error('Promotor no encontrado');
     if (!promoter.stripe_account_id || promoter.stripe_account_status !== 'active') {
@@ -1105,10 +1173,149 @@ const paymentsRouter = createTRPCRouter({
     }
 
     const payoutId = `pay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    ctx.db.prepare(`INSERT INTO promoter_payouts (id, promoter_id, amount, status) VALUES (?, ?, ?, 'processing')`)
-      .run(payoutId, input.promoterId, input.amount);
+    const amountInCents = Math.round(input.amount * 100);
 
-    return { id: payoutId, success: true };
+    try {
+      // Create a transfer to the connected account
+      const transfer = await stripe.transfers.create({
+        amount: amountInCents,
+        currency: 'eur',
+        destination: promoter.stripe_account_id,
+        metadata: {
+          payoutId,
+          promoterId: input.promoterId,
+        },
+      });
+
+      ctx.db.prepare(`INSERT INTO promoter_payouts (id, promoter_id, amount, stripe_transfer_id, status, completed_at) VALUES (?, ?, ?, ?, 'completed', CURRENT_TIMESTAMP)`)
+        .run(payoutId, input.promoterId, input.amount, transfer.id);
+
+      console.log('[STRIPE] Payout created:', transfer.id);
+      return { id: payoutId, transferId: transfer.id, success: true };
+    } catch (error) {
+      console.error('[STRIPE] Error creating payout:', error);
+      
+      ctx.db.prepare(`INSERT INTO promoter_payouts (id, promoter_id, amount, status) VALUES (?, ?, ?, 'failed')`)
+        .run(payoutId, input.promoterId, input.amount);
+
+      throw new Error(`Error al crear el pago: ${error.message}`);
+    }
+  }),
+
+  // Create Stripe Connect onboarding link for promoter
+  createConnectOnboardingLink: publicProcedure.input(z.object({
+    promoterId: z.string(),
+    returnUrl: z.string(),
+    refreshUrl: z.string(),
+  })).mutation(async ({ ctx, input }) => {
+    if (!stripe) {
+      throw new Error('Stripe no está configurado');
+    }
+
+    const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId);
+    if (!promoter) throw new Error('Promotor no encontrado');
+
+    try {
+      let accountId = promoter.stripe_account_id;
+
+      // Create new Connect account if doesn't exist
+      if (!accountId) {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          country: 'ES',
+          email: promoter.email,
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+          business_type: 'individual',
+          metadata: {
+            promoterId: promoter.id,
+          },
+        });
+
+        accountId = account.id;
+        ctx.db.prepare('UPDATE promoters SET stripe_account_id = ?, stripe_account_status = ? WHERE id = ?')
+          .run(accountId, 'pending', input.promoterId);
+        
+        console.log('[STRIPE] Created Connect account:', accountId);
+      }
+
+      // Create onboarding link
+      const accountLink = await stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: input.refreshUrl,
+        return_url: input.returnUrl,
+        type: 'account_onboarding',
+      });
+
+      console.log('[STRIPE] Onboarding link created for:', accountId);
+      return { url: accountLink.url, accountId };
+    } catch (error) {
+      console.error('[STRIPE] Error creating onboarding link:', error);
+      throw new Error(`Error al crear enlace de Stripe: ${error.message}`);
+    }
+  }),
+
+  // Check Connect account status
+  checkConnectStatus: publicProcedure.input(z.object({
+    promoterId: z.string(),
+  })).query(async ({ ctx, input }) => {
+    if (!stripe) {
+      return { connected: false, status: 'stripe_not_configured' };
+    }
+
+    const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId);
+    if (!promoter || !promoter.stripe_account_id) {
+      return { connected: false, status: 'no_account' };
+    }
+
+    try {
+      const account = await stripe.accounts.retrieve(promoter.stripe_account_id);
+      
+      const isActive = account.charges_enabled && account.payouts_enabled;
+      const newStatus = isActive ? 'active' : 'pending';
+
+      // Update status in database if changed
+      if (promoter.stripe_account_status !== newStatus) {
+        ctx.db.prepare('UPDATE promoters SET stripe_account_status = ? WHERE id = ?')
+          .run(newStatus, input.promoterId);
+      }
+
+      return {
+        connected: true,
+        status: newStatus,
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        detailsSubmitted: account.details_submitted,
+        accountId: promoter.stripe_account_id,
+      };
+    } catch (error) {
+      console.error('[STRIPE] Error checking account status:', error);
+      return { connected: false, status: 'error', error: error.message };
+    }
+  }),
+
+  // Get Stripe dashboard link for promoter
+  getConnectDashboardLink: publicProcedure.input(z.object({
+    promoterId: z.string(),
+  })).query(async ({ ctx, input }) => {
+    if (!stripe) {
+      throw new Error('Stripe no está configurado');
+    }
+
+    const promoter = ctx.db.prepare('SELECT * FROM promoters WHERE id = ?').get(input.promoterId);
+    if (!promoter || !promoter.stripe_account_id) {
+      throw new Error('El promotor no tiene cuenta de Stripe');
+    }
+
+    try {
+      const loginLink = await stripe.accounts.createLoginLink(promoter.stripe_account_id);
+      return { url: loginLink.url };
+    } catch (error) {
+      console.error('[STRIPE] Error creating dashboard link:', error);
+      throw new Error(`Error al crear enlace: ${error.message}`);
+    }
   }),
 });
 
@@ -2320,6 +2527,146 @@ app.use('/api/trpc/*', trpcServer({ endpoint: '/api/trpc', router: appRouter, cr
 app.get('/', (c) => c.json({ status: 'ok', message: 'TicketZone API', version: '1.0.0' }));
 app.get('/api/health', (c) => c.json({ status: 'healthy', timestamp: new Date().toISOString() }));
 app.get('/health', (c) => c.json({ status: 'healthy', timestamp: new Date().toISOString() }));
+
+// Stripe Webhook endpoint
+app.post('/api/webhooks/stripe', async (c) => {
+  if (!stripe) {
+    return c.json({ error: 'Stripe not configured' }, 500);
+  }
+
+  const sig = c.req.header('stripe-signature');
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.warn('[WEBHOOK] STRIPE_WEBHOOK_SECRET not configured');
+    return c.json({ error: 'Webhook secret not configured' }, 500);
+  }
+
+  let event;
+  try {
+    const body = await c.req.text();
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[WEBHOOK] Signature verification failed:', err.message);
+    return c.json({ error: `Webhook Error: ${err.message}` }, 400);
+  }
+
+  const db = getDatabase();
+
+  console.log('[WEBHOOK] Received event:', event.type);
+
+  switch (event.type) {
+    case 'payment_intent.succeeded': {
+      const paymentIntent = event.data.object;
+      console.log('[WEBHOOK] Payment succeeded:', paymentIntent.id);
+
+      const { eventId, tierId, quantity, buyerName, buyerEmail, buyerPhone, sellerCode } = paymentIntent.metadata;
+
+      if (!eventId || !tierId || !quantity) {
+        console.log('[WEBHOOK] Missing metadata, skipping ticket creation');
+        break;
+      }
+
+      // Check if tickets already created for this payment
+      const existingTicket = db.prepare('SELECT id FROM tickets WHERE payment_intent_id = ?').get(paymentIntent.id);
+      if (existingTicket) {
+        console.log('[WEBHOOK] Tickets already created for this payment');
+        break;
+      }
+
+      const tier = db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(tierId);
+      const eventData = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+
+      if (!tier || !eventData) {
+        console.error('[WEBHOOK] Tier or event not found');
+        break;
+      }
+
+      const tickets = [];
+      let seller = null;
+      let sellerCommission = 0;
+
+      if (sellerCode) {
+        seller = db.prepare('SELECT * FROM sellers WHERE code = ? AND is_active = 1').get(sellerCode.toUpperCase());
+        if (seller) {
+          const commissions = db.prepare('SELECT * FROM seller_commissions WHERE seller_id = ? ORDER BY min_sales ASC').all(seller.id);
+          for (const comm of commissions) {
+            if (seller.total_sales >= comm.min_sales && (comm.max_sales === null || seller.total_sales < comm.max_sales)) {
+              sellerCommission = tier.price * (comm.percentage / 100);
+              break;
+            }
+          }
+        }
+      }
+
+      const platformCommissionSetting = db.prepare("SELECT value FROM settings WHERE key = 'platform_commission'").get();
+      const platformFee = tier.price * ((parseFloat(platformCommissionSetting?.value || '5') / 100));
+      const promoterAmount = tier.price - platformFee - sellerCommission;
+
+      const qty = parseInt(quantity);
+      for (let i = 0; i < qty; i++) {
+        const ticketId = `tkt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const qrCode = `${eventId}-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+        db.prepare(`INSERT INTO tickets (id, event_id, tier_id, buyer_name, buyer_email, buyer_phone,
+          qr_code, seller_id, seller_code, payment_method, payment_intent_id, price, platform_fee, promoter_amount, seller_commission)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          ticketId, eventId, tierId, buyerName, buyerEmail,
+          buyerPhone || null, qrCode, seller?.id || null,
+          sellerCode?.toUpperCase() || null, 'card', paymentIntent.id,
+          tier.price, platformFee, promoterAmount, sellerCommission
+        );
+
+        tickets.push({ id: ticketId, qrCode, price: tier.price });
+      }
+
+      db.prepare('UPDATE ticket_tiers SET sold = sold + ? WHERE id = ?').run(qty, tierId);
+
+      if (seller) {
+        db.prepare('UPDATE sellers SET total_sales = total_sales + ?, total_revenue = total_revenue + ? WHERE id = ?')
+          .run(qty, tier.price * qty, seller.id);
+      }
+
+      // Send email
+      sendTicketEmail(
+        buyerEmail,
+        buyerName,
+        tickets,
+        { name: eventData.name, date: eventData.date, time: eventData.time, venue: eventData.venue, location: eventData.location },
+        tier.name
+      ).catch(err => console.error('[WEBHOOK] Error sending email:', err));
+
+      console.log('[WEBHOOK] Created', tickets.length, 'tickets');
+      break;
+    }
+
+    case 'payment_intent.payment_failed': {
+      const paymentIntent = event.data.object;
+      console.log('[WEBHOOK] Payment failed:', paymentIntent.id, paymentIntent.last_payment_error?.message);
+      break;
+    }
+
+    case 'account.updated': {
+      const account = event.data.object;
+      console.log('[WEBHOOK] Account updated:', account.id);
+
+      // Update promoter status
+      const promoter = db.prepare('SELECT * FROM promoters WHERE stripe_account_id = ?').get(account.id);
+      if (promoter) {
+        const isActive = account.charges_enabled && account.payouts_enabled;
+        db.prepare('UPDATE promoters SET stripe_account_status = ? WHERE id = ?')
+          .run(isActive ? 'active' : 'pending', promoter.id);
+        console.log('[WEBHOOK] Updated promoter status:', promoter.id, isActive ? 'active' : 'pending');
+      }
+      break;
+    }
+
+    default:
+      console.log('[WEBHOOK] Unhandled event type:', event.type);
+  }
+
+  return c.json({ received: true });
+});
 
 const port = parseInt(process.env.PORT || '3001', 10);
 

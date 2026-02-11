@@ -39,9 +39,19 @@ export const settingsRouter = createTRPCRouter({
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
       `);
 
-      for (const [key, value] of Object.entries(input)) {
-        stmt.run(key, value);
-      }
+      // Usar transacción para asegurar que todos los cambios se guarden
+      const saveAll = ctx.db.transaction(() => {
+        for (const [key, value] of Object.entries(input)) {
+          console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
+          stmt.run(key, value);
+        }
+      });
+      
+      saveAll();
+      
+      // Verificar que se guardaron
+      const saved = ctx.db.prepare('SELECT * FROM settings').all() as any[];
+      console.log('[SETTINGS] Valores guardados en DB:', JSON.stringify(saved));
 
       return { success: true };
     }),

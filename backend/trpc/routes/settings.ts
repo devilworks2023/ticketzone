@@ -49,6 +49,14 @@ export const settingsRouter = createTRPCRouter({
       
       saveAll();
       
+      // Forzar WAL checkpoint para asegurar que los datos se escriban al disco
+      try {
+        ctx.db.pragma('wal_checkpoint(TRUNCATE)');
+        console.log('[SETTINGS] WAL checkpoint completado');
+      } catch (e) {
+        console.log('[SETTINGS] WAL checkpoint error (ignorable):', e);
+      }
+      
       // Verificar que se guardaron
       const saved = ctx.db.prepare('SELECT * FROM settings').all() as any[];
       console.log('[SETTINGS] Valores guardados en DB:', JSON.stringify(saved));

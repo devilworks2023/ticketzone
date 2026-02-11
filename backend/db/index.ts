@@ -15,7 +15,10 @@ export function getDatabase(): Database.Database {
     
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = FULL');
     db.pragma('foreign_keys = ON');
+    
+    console.log('[DB] Database initialized at:', DB_PATH);
     
     initializeDatabase(db);
   }

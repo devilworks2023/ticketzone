@@ -261,13 +261,13 @@ function initializeDatabase(db: Database.Database) {
   if (settingsCount.count === 0) {
     const insertSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)');
     insertSetting.run('platform_name', 'TicketZone');
-    insertSetting.run('platform_commission', '0');
+    insertSetting.run('platform_commission', '5');
     insertSetting.run('currency', 'EUR');
     insertSetting.run('stripe_enabled', 'true');
-  } else {
-    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'stripe_enabled'").run();
-    db.prepare("UPDATE settings SET value = '0' WHERE key = 'platform_commission'").run();
+    insertSetting.run('early_withdrawal_fee', '2');
+    console.log('Default settings created');
   }
+  // No resetear valores existentes - mantener la configuración guardada por el admin
 
   const plansCount = db.prepare('SELECT COUNT(*) as count FROM subscription_plans').get() as { count: number };
   if (plansCount.count === 0) {

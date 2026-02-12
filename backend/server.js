@@ -465,7 +465,10 @@ const eventsRouter = createTRPCRouter({
   }),
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-    ctx.ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+    // Primero eliminar ticket_tiers relacionados
+    ctx.db.prepare('DELETE FROM ticket_tiers WHERE event_id = ?').run(input.id);
+    // Luego eliminar el evento
+    ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
     return { success: true };
   }),
 });
@@ -559,6 +562,24 @@ const ticketsRouter = createTRPCRouter({
     ).catch(err => console.error('Error enviando email:', err));
 
     return { id: ticketId, qrCode, price: tier.price, success: true };
+  }),
+
+  delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
+    const ticket = ctx.db.prepare('SELECT * FROM tickets WHERE id = ?').get(input.id);
+    if (!ticket) throw new Error('Entrada no encontrada');
+    
+    // Decrementar el contador de vendidos en el tier
+    ctx.db.prepare('UPDATE ticket_tiers SET sold = sold - 1 WHERE id = ? AND sold > 0').run(ticket.tier_id);
+    
+    // Si hay vendedor, decrementar sus estadísticas
+    if (ticket.seller_id) {
+      ctx.db.prepare('UPDATE sellers SET total_sales = total_sales - 1, total_revenue = total_revenue - ? WHERE id = ? AND total_sales > 0')
+        .run(ticket.price, ticket.seller_id);
+    }
+    
+    // Eliminar la entrada
+    ctx.db.prepare('DELETE FROM tickets WHERE id = ?').run(input.id);
+    return { success: true };
   }),
 
   validate: publicProcedure.input(z.object({ qrCode: z.string() })).mutation(({ ctx, input }) => {

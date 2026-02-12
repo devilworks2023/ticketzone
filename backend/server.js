@@ -1920,11 +1920,19 @@ const authRouter = createTRPCRouter({
       code: z.string().length(6),
     }))
     .mutation(async ({ ctx, input }) => {
+      const nowISO = new Date().toISOString();
+      console.log('[VERIFY] Email:', input.email.toLowerCase(), '| Código:', input.code, '| Ahora:', nowISO);
+      
       const verification = ctx.db.prepare(`
         SELECT * FROM email_verifications 
-        WHERE email = ? AND code = ? AND verified = 0 AND expires_at > datetime('now')
+        WHERE email = ? AND code = ? AND verified = 0 AND expires_at > ?
         ORDER BY created_at DESC LIMIT 1
-      `).get(input.email.toLowerCase(), input.code);
+      `).get(input.email.toLowerCase(), input.code, nowISO);
+      
+      console.log('[VERIFY] Verificación encontrada:', verification ? 'SI' : 'NO');
+      if (verification) {
+        console.log('[VERIFY] Expira:', verification.expires_at);
+      }
 
       if (!verification) {
         throw new Error('Código de verificación inválido o expirado');
@@ -2026,9 +2034,9 @@ const authRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const existingVerification = ctx.db.prepare(`
         SELECT * FROM email_verifications 
-        WHERE email = ? AND verified = 0
+        WHERE email = ? AND verified = 0 AND expires_at > ?
         ORDER BY created_at DESC LIMIT 1
-      `).get(input.email.toLowerCase());
+      `).get(input.email.toLowerCase(), new Date().toISOString());
 
       if (!existingVerification) {
         throw new Error('No hay verificación pendiente para este email');

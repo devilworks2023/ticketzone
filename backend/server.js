@@ -34,11 +34,15 @@ function getDatabase() {
       fs.mkdirSync(dir, { recursive: true });
     }
     
+    console.log('[DB] Abriendo base de datos en:', DB_PATH);
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = FULL');
     db.pragma('foreign_keys = ON');
+    db.pragma('busy_timeout = 5000');
     
     initializeDatabase(db);
+    console.log('[DB] Base de datos lista');
   }
   return db;
 }
@@ -1524,41 +1528,55 @@ const settingsRouter = createTRPCRouter({
     }
   }),
   setMultiple: publicProcedure.input(z.record(z.string(), z.string())).mutation(({ ctx, input }) => {
-    console.log('[SETTINGS] setMultiple called with:', JSON.stringify(input));
+    console.log('');
+    console.log('========================================');
+    console.log('[SETTINGS] GUARDANDO CONFIGURACIÓN');
+    console.log('========================================');
+    console.log('[SETTINGS] Datos recibidos:', JSON.stringify(input, null, 2));
+    
     try {
-      const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
+      // Guardar cada setting individualmente con verificación
+      for (const [key, value] of Object.entries(input)) {
+        console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
+        
+        ctx.db.prepare(`
+          INSERT INTO settings (key, value, updated_at) 
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET 
+            value = excluded.value, 
+            updated_at = CURRENT_TIMESTAMP
+        `).run(key, value);
+      }
       
-      // Usar transacción para asegurar atomicidad
-      const saveAll = ctx.db.transaction(() => {
-        for (const [key, value] of Object.entries(input)) {
-          console.log('[SETTINGS] Saving:', key, '=', value);
-          stmt.run(key, value);
-        }
-      });
-      
-      saveAll();
-      
-      // Forzar WAL checkpoint para asegurar que los datos se escriban al disco
+      // Forzar escritura al disco con checkpoint WAL
       try {
         ctx.db.pragma('wal_checkpoint(TRUNCATE)');
-        console.log('[SETTINGS] WAL checkpoint completado');
+        console.log('[SETTINGS] WAL checkpoint OK - datos escritos al disco');
       } catch (walError) {
         console.log('[SETTINGS] WAL checkpoint warning:', walError.message);
       }
       
-      // Verificar que se guardaron
+      // Verificar que se guardaron correctamente
+      const allSettings = ctx.db.prepare('SELECT key, value FROM settings').all();
       const savedValues = {};
-      for (const key of Object.keys(input)) {
-        const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-        savedValues[key] = saved?.value;
-        console.log('[SETTINGS] Verified:', key, '=', saved?.value);
+      for (const s of allSettings) {
+        savedValues[s.key] = s.value;
       }
       
-      console.log('[SETTINGS] All settings saved and verified:', JSON.stringify(savedValues));
+      console.log('');
+      console.log('[SETTINGS] VERIFICACIÓN - Valores en DB:');
+      for (const [key, value] of Object.entries(savedValues)) {
+        const expected = input[key];
+        const match = expected === value ? '✓' : '✗';
+        console.log(`  ${match} ${key}: ${value}${expected !== undefined ? ` (esperado: ${expected})` : ''}`);
+      }
+      console.log('========================================');
+      console.log('');
+      
       return { success: true, savedValues };
     } catch (error) {
-      console.error('[SETTINGS] Error saving multiple settings:', error);
+      console.error('[SETTINGS] ERROR al guardar:', error);
+      console.error('[SETTINGS] Stack:', error.stack);
       throw new Error('Error al guardar configuración: ' + error.message);
     }
   }),

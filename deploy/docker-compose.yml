@@ -33,8 +33,11 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
+        mode: "non-blocking"
+    tty: true
+    stdin_open: true
 
 volumes:
   ticketzone-data:

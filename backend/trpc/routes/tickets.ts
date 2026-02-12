@@ -273,4 +273,37 @@ export const ticketsRouter = createTRPCRouter({
         price: t.price,
       }));
     }),
+
+  delete: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => {
+      console.log('[TICKETS] Eliminando entrada:', input.id);
+      
+      const ticket = ctx.db.prepare('SELECT * FROM tickets WHERE id = ?').get(input.id) as any;
+      if (!ticket) {
+        console.error('[TICKETS] Entrada no encontrada:', input.id);
+        throw new Error('Entrada no encontrada');
+      }
+      
+      console.log('[TICKETS] Entrada encontrada:', { id: ticket.id, tierId: ticket.tier_id, sellerId: ticket.seller_id });
+      
+      // Decrementar el contador de vendidos en el tier
+      ctx.db.prepare('UPDATE ticket_tiers SET sold = sold - 1 WHERE id = ? AND sold > 0').run(ticket.tier_id);
+      
+      // Si hay vendedor, decrementar sus estadísticas
+      if (ticket.seller_id) {
+        ctx.db.prepare('UPDATE sellers SET total_sales = total_sales - 1, total_revenue = total_revenue - ? WHERE id = ? AND total_sales > 0')
+          .run(ticket.price, ticket.seller_id);
+      }
+      
+      // Eliminar la entrada
+      const result = ctx.db.prepare('DELETE FROM tickets WHERE id = ?').run(input.id);
+      
+      if (result.changes === 0) {
+        throw new Error('No se pudo eliminar la entrada');
+      }
+      
+      console.log('[TICKETS] Entrada eliminada exitosamente:', input.id);
+      return { success: true };
+    }),
 });

@@ -187,7 +187,32 @@ export const eventsRouter = createTRPCRouter({
   delete: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) => {
-      ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+      console.log('[EVENTS] Eliminando evento:', input.id);
+      
+      // Verificar que el evento existe
+      const event = ctx.db.prepare('SELECT * FROM events WHERE id = ?').get(input.id) as any;
+      if (!event) {
+        throw new Error('Evento no encontrado');
+      }
+      
+      // Contar entradas asociadas
+      const ticketCount = ctx.db.prepare('SELECT COUNT(*) as count FROM tickets WHERE event_id = ?').get(input.id) as any;
+      console.log('[EVENTS] Entradas a eliminar:', ticketCount?.count || 0);
+      
+      // Primero eliminar tickets relacionados
+      ctx.db.prepare('DELETE FROM tickets WHERE event_id = ?').run(input.id);
+      
+      // Luego eliminar ticket_tiers relacionados
+      ctx.db.prepare('DELETE FROM ticket_tiers WHERE event_id = ?').run(input.id);
+      
+      // Finalmente eliminar el evento
+      const result = ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+      
+      if (result.changes === 0) {
+        throw new Error('No se pudo eliminar el evento');
+      }
+      
+      console.log('[EVENTS] Evento eliminado exitosamente:', input.id);
       return { success: true };
     }),
 

@@ -1529,12 +1529,27 @@ const settingsRouter = createTRPCRouter({
       const stmt = ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`);
       
+      // Usar transacción para asegurar atomicidad
+      const saveAll = ctx.db.transaction(() => {
+        for (const [key, value] of Object.entries(input)) {
+          console.log('[SETTINGS] Saving:', key, '=', value);
+          stmt.run(key, value);
+        }
+      });
+      
+      saveAll();
+      
+      // Forzar WAL checkpoint para asegurar que los datos se escriban al disco
+      try {
+        ctx.db.pragma('wal_checkpoint(TRUNCATE)');
+        console.log('[SETTINGS] WAL checkpoint completado');
+      } catch (walError) {
+        console.log('[SETTINGS] WAL checkpoint warning:', walError.message);
+      }
+      
+      // Verificar que se guardaron
       const savedValues = {};
-      for (const [key, value] of Object.entries(input)) {
-        console.log('[SETTINGS] Saving:', key, '=', value);
-        stmt.run(key, value);
-        
-        // Verificar inmediatamente
+      for (const key of Object.keys(input)) {
         const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
         savedValues[key] = saved?.value;
         console.log('[SETTINGS] Verified:', key, '=', saved?.value);

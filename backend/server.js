@@ -1511,13 +1511,19 @@ const settingsRouter = createTRPCRouter({
       throw new Error('Error al obtener configuración: ' + error.message);
     }
   }),
+  
   set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
     console.log('[SETTINGS] set called:', input.key, '=', input.value);
     try {
-      ctx.db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).run(input.key, input.value);
+      const stmt = ctx.db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+      `);
+      stmt.run(input.key, input.value);
       
-      // Verificar que se guardó
+      // Forzar checkpoint WAL
+      try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+      
       const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(input.key);
       console.log('[SETTINGS] Verified saved value:', input.key, '=', saved?.value);
       
@@ -1527,6 +1533,7 @@ const settingsRouter = createTRPCRouter({
       throw new Error('Error al guardar configuración: ' + error.message);
     }
   }),
+  
   setMultiple: publicProcedure.input(z.record(z.string(), z.string())).mutation(({ ctx, input }) => {
     console.log('');
     console.log('========================================');
@@ -1535,18 +1542,24 @@ const settingsRouter = createTRPCRouter({
     console.log('[SETTINGS] Datos recibidos:', JSON.stringify(input, null, 2));
     
     try {
-      // Guardar cada setting individualmente con verificación
-      for (const [key, value] of Object.entries(input)) {
-        console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
-        
-        ctx.db.prepare(`
+      // Usar una transacción para asegurar atomicidad
+      const saveSettings = ctx.db.transaction((settings) => {
+        const stmt = ctx.db.prepare(`
           INSERT INTO settings (key, value, updated_at) 
           VALUES (?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(key) DO UPDATE SET 
             value = excluded.value, 
             updated_at = CURRENT_TIMESTAMP
-        `).run(key, value);
-      }
+        `);
+        
+        for (const [key, value] of Object.entries(settings)) {
+          console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
+          stmt.run(key, String(value));
+        }
+      });
+      
+      // Ejecutar la transacción
+      saveSettings(input);
       
       // Forzar escritura al disco con checkpoint WAL
       try {
@@ -1565,13 +1578,19 @@ const settingsRouter = createTRPCRouter({
       
       console.log('');
       console.log('[SETTINGS] VERIFICACIÓN - Valores en DB:');
-      for (const [key, value] of Object.entries(savedValues)) {
-        const expected = input[key];
-        const match = expected === value ? '✓' : '✗';
-        console.log(`  ${match} ${key}: ${value}${expected !== undefined ? ` (esperado: ${expected})` : ''}`);
+      let allOk = true;
+      for (const [key, value] of Object.entries(input)) {
+        const saved = savedValues[key];
+        const match = saved === String(value);
+        if (!match) allOk = false;
+        console.log(`  ${match ? '✓' : '✗'} ${key}: ${saved} (esperado: ${value})`);
       }
       console.log('========================================');
       console.log('');
+      
+      if (!allOk) {
+        throw new Error('Algunos valores no se guardaron correctamente');
+      }
       
       return { success: true, savedValues };
     } catch (error) {
@@ -1581,7 +1600,6 @@ const settingsRouter = createTRPCRouter({
     }
   }),
   
-  // Endpoint de debug para verificar estado de la base de datos
   debug: publicProcedure.query(({ ctx }) => {
     try {
       const dbPath = process.env.DATABASE_PATH || 'unknown';
@@ -2376,16 +2394,32 @@ const subscriptionsRouter = createTRPCRouter({
       sortOrder: z.number().optional(),
     }))
     .mutation(({ ctx, input }) => {
-      console.log('[SUBSCRIPTIONS] createPlan called with:', input);
-      const id = `plan_${Date.now()}`;
-      const price = input.priceMonthly ?? input.price ?? 0;
-      const maxEvents = input.maxEventsPerMonth ?? input.maxEvents ?? 1;
-      ctx.db.prepare(`
-        INSERT INTO subscription_plans (id, name, price, max_events, description, features, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
-      `).run(id, input.name, price, maxEvents, input.description || '', JSON.stringify(input.features || []));
-      console.log('[SUBSCRIPTIONS] Plan created:', id);
-      return { id, success: true };
+      console.log('[SUBSCRIPTIONS] createPlan called with:', JSON.stringify(input));
+      try {
+        const id = `plan_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        const price = input.priceMonthly ?? input.price ?? 0;
+        const maxEvents = input.maxEventsPerMonth ?? input.maxEvents ?? 1;
+        
+        ctx.db.prepare(`
+          INSERT INTO subscription_plans (id, name, price, max_events, description, features, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, 1)
+        `).run(id, input.name, price, maxEvents, input.description || '', JSON.stringify(input.features || []));
+        
+        // Forzar checkpoint WAL
+        try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+        
+        // Verificar que se creó
+        const created = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(id);
+        if (!created) {
+          throw new Error('El plan no se creó correctamente');
+        }
+        
+        console.log('[SUBSCRIPTIONS] Plan created and verified:', id);
+        return { id, success: true };
+      } catch (error) {
+        console.error('[SUBSCRIPTIONS] Error creating plan:', error);
+        throw new Error('Error al crear plan: ' + error.message);
+      }
     }),
 
   updatePlan: publicProcedure
@@ -2402,32 +2436,71 @@ const subscriptionsRouter = createTRPCRouter({
       sortOrder: z.number().optional(),
     }))
     .mutation(({ ctx, input }) => {
-      console.log('[SUBSCRIPTIONS] updatePlan called with:', input);
-      const updates = [];
-      const values = [];
+      console.log('[SUBSCRIPTIONS] updatePlan called with:', JSON.stringify(input));
+      try {
+        // Verificar que el plan existe
+        const existing = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(input.id);
+        if (!existing) {
+          throw new Error('Plan no encontrado');
+        }
+        
+        const updates = [];
+        const values = [];
 
-      if (input.name !== undefined) { updates.push('name = ?'); values.push(input.name); }
-      const price = input.priceMonthly ?? input.price;
-      if (price !== undefined) { updates.push('price = ?'); values.push(price); }
-      const maxEvents = input.maxEventsPerMonth ?? input.maxEvents;
-      if (maxEvents !== undefined) { updates.push('max_events = ?'); values.push(maxEvents); }
-      if (input.description !== undefined) { updates.push('description = ?'); values.push(input.description); }
-      if (input.features !== undefined) { updates.push('features = ?'); values.push(JSON.stringify(input.features)); }
-      if (input.isActive !== undefined) { updates.push('is_active = ?'); values.push(input.isActive ? 1 : 0); }
+        if (input.name !== undefined) { updates.push('name = ?'); values.push(input.name); }
+        const price = input.priceMonthly ?? input.price;
+        if (price !== undefined) { updates.push('price = ?'); values.push(price); }
+        const maxEvents = input.maxEventsPerMonth ?? input.maxEvents;
+        if (maxEvents !== undefined) { updates.push('max_events = ?'); values.push(maxEvents); }
+        if (input.description !== undefined) { updates.push('description = ?'); values.push(input.description); }
+        if (input.features !== undefined) { updates.push('features = ?'); values.push(JSON.stringify(input.features)); }
+        if (input.isActive !== undefined) { updates.push('is_active = ?'); values.push(input.isActive ? 1 : 0); }
 
-      if (updates.length > 0) {
-        values.push(input.id);
-        ctx.db.prepare(`UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-        console.log('[SUBSCRIPTIONS] Plan updated:', input.id);
+        if (updates.length > 0) {
+          values.push(input.id);
+          const sql = `UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`;
+          console.log('[SUBSCRIPTIONS] Executing SQL:', sql, 'with values:', values);
+          ctx.db.prepare(sql).run(...values);
+          
+          // Forzar checkpoint WAL
+          try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+          
+          // Verificar actualización
+          const updated = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(input.id);
+          console.log('[SUBSCRIPTIONS] Plan updated and verified:', JSON.stringify(updated));
+        }
+        return { success: true };
+      } catch (error) {
+        console.error('[SUBSCRIPTIONS] Error updating plan:', error);
+        throw new Error('Error al actualizar plan: ' + error.message);
       }
-      return { success: true };
     }),
 
   deletePlan: publicProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) => {
-      ctx.db.prepare('DELETE FROM subscription_plans WHERE id = ?').run(input.id);
-      return { success: true };
+      console.log('[SUBSCRIPTIONS] deletePlan called with:', input.id);
+      try {
+        // Verificar si hay suscripciones activas
+        const activeSubs = ctx.db.prepare(
+          'SELECT COUNT(*) as count FROM promoter_subscriptions WHERE plan_id = ? AND status = ?'
+        ).get(input.id, 'active');
+        
+        if (activeSubs && activeSubs.count > 0) {
+          throw new Error('No se puede eliminar un plan con suscripciones activas');
+        }
+        
+        ctx.db.prepare('DELETE FROM subscription_plans WHERE id = ?').run(input.id);
+        
+        // Forzar checkpoint WAL
+        try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+        
+        console.log('[SUBSCRIPTIONS] Plan deleted:', input.id);
+        return { success: true };
+      } catch (error) {
+        console.error('[SUBSCRIPTIONS] Error deleting plan:', error);
+        throw new Error('Error al eliminar plan: ' + error.message);
+      }
     }),
 
   getPromoterSubscription: publicProcedure

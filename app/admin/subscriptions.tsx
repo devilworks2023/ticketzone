@@ -102,7 +102,7 @@ export default function AdminSubscriptionsScreen() {
       console.log('[SUBSCRIPTIONS] Guardando plan...');
       if (editingPlan) {
         console.log('[SUBSCRIPTIONS] Actualizando plan:', editingPlan.id);
-        await updatePlanMutation.mutateAsync({
+        const result = await updatePlanMutation.mutateAsync({
           id: editingPlan.id,
           name: formName.trim(),
           description: formDescription.trim() || undefined,
@@ -111,27 +111,51 @@ export default function AdminSubscriptionsScreen() {
           isActive: formIsActive,
           sortOrder: formSortOrder ? parseInt(formSortOrder) : undefined,
         });
-        console.log('[SUBSCRIPTIONS] Plan actualizado correctamente');
-        Alert.alert('Éxito', 'Plan actualizado correctamente');
+        console.log('[SUBSCRIPTIONS] Resultado actualización:', JSON.stringify(result));
+        
+        if (result && result.success) {
+          // Esperar y recargar
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await plansQuery.refetch();
+          await statsQuery.refetch();
+          Alert.alert('Éxito', 'Plan actualizado correctamente');
+          setIsModalVisible(false);
+          resetForm();
+        } else {
+          Alert.alert('Error', 'El servidor no confirmó la actualización');
+        }
       } else {
         console.log('[SUBSCRIPTIONS] Creando nuevo plan');
-        await createPlanMutation.mutateAsync({
+        const result = await createPlanMutation.mutateAsync({
           name: formName.trim(),
           description: formDescription.trim() || undefined,
           maxEventsPerMonth: parseInt(formMaxEvents),
           priceMonthly: parseFloat(formPrice),
           sortOrder: formSortOrder ? parseInt(formSortOrder) : undefined,
         });
-        console.log('[SUBSCRIPTIONS] Plan creado correctamente');
-        Alert.alert('Éxito', 'Plan creado correctamente');
+        console.log('[SUBSCRIPTIONS] Resultado creación:', JSON.stringify(result));
+        
+        if (result && result.success) {
+          // Esperar y recargar
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await plansQuery.refetch();
+          await statsQuery.refetch();
+          Alert.alert('Éxito', 'Plan creado correctamente');
+          setIsModalVisible(false);
+          resetForm();
+        } else {
+          Alert.alert('Error', 'El servidor no confirmó la creación');
+        }
       }
-      setIsModalVisible(false);
-      resetForm();
-      plansQuery.refetch();
-      statsQuery.refetch();
     } catch (error: any) {
       console.error('[SUBSCRIPTIONS] Error guardando plan:', error);
-      Alert.alert('Error', error.message || 'No se pudo guardar el plan');
+      let errorMsg = 'No se pudo guardar el plan';
+      if (error?.message) {
+        errorMsg = error.message;
+      } else if (error?.data?.message) {
+        errorMsg = error.data.message;
+      }
+      Alert.alert('Error', errorMsg);
     }
   };
 
@@ -146,12 +170,27 @@ export default function AdminSubscriptionsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deletePlanMutation.mutateAsync({ id: plan.id });
-              Alert.alert('Éxito', 'Plan eliminado');
-              plansQuery.refetch();
-              statsQuery.refetch();
+              console.log('[SUBSCRIPTIONS] Eliminando plan:', plan.id);
+              const result = await deletePlanMutation.mutateAsync({ id: plan.id });
+              console.log('[SUBSCRIPTIONS] Resultado eliminación:', JSON.stringify(result));
+              
+              if (result && result.success) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await plansQuery.refetch();
+                await statsQuery.refetch();
+                Alert.alert('Éxito', 'Plan eliminado correctamente');
+              } else {
+                Alert.alert('Error', 'El servidor no confirmó la eliminación');
+              }
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'No se pudo eliminar el plan');
+              console.error('[SUBSCRIPTIONS] Error eliminando plan:', error);
+              let errorMsg = 'No se pudo eliminar el plan';
+              if (error?.message) {
+                errorMsg = error.message;
+              } else if (error?.data?.message) {
+                errorMsg = error.data.message;
+              }
+              Alert.alert('Error', errorMsg);
             }
           },
         },

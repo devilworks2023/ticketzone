@@ -21,18 +21,22 @@ echo "[INFO] Contenido de /app/data:"
 ls -la /app/data/
 
 echo ""
-echo "[1/3] Iniciando Nginx en background..."
-nginx &
-NGINX_PID=$!
+echo "[1/3] Iniciando Nginx..."
+nginx
 
-echo "[2/3] Esperando que Nginx inicie..."
+echo "[2/3] Verificando que Nginx esté corriendo..."
 sleep 2
 
-if ! kill -0 $NGINX_PID 2>/dev/null; then
+if [ -f /var/run/nginx.pid ] && kill -0 $(cat /var/run/nginx.pid) 2>/dev/null; then
+    NGINX_PID=$(cat /var/run/nginx.pid)
+    echo "[OK] Nginx iniciado (PID: $NGINX_PID)"
+else
     echo "ERROR: Nginx no pudo iniciar"
+    echo "Verificando logs de error:"
+    cat /var/log/nginx/error.log 2>/dev/null || echo "No hay logs disponibles"
+    nginx -t 2>&1
     exit 1
 fi
-echo "[OK] Nginx iniciado (PID: $NGINX_PID)"
 
 echo ""
 echo "╔═══════════════════════════════════════════╗"
@@ -47,7 +51,7 @@ echo "=========================================================="
 echo ""
 
 # Trap para limpiar procesos al salir
-trap "echo 'Cerrando...'; kill $NGINX_PID 2>/dev/null; exit" SIGTERM SIGINT
+trap "echo 'Cerrando...'; nginx -s quit 2>/dev/null; exit" SIGTERM SIGINT
 
 # Ejecutar backend en PRIMER PLANO para ver logs en tiempo real
 cd /app

@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Minus, Plus, CreditCard, Smartphone, Crown, Bus, Check, Tag, Gift, Calendar, MapPin, User, ChevronDown, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useApp } from '@/contexts/AppContext';
+import { trpc } from '@/lib/trpc';
 import Colors from '@/constants/colors';
 
 type PaymentMethod = 'card' | 'googlepay' | 'applepay';
@@ -12,7 +12,8 @@ type PaymentMethod = 'card' | 'googlepay' | 'applepay';
 export default function PurchaseScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const router = useRouter();
-  const { events, addTicket, getSellerByCode } = useApp();
+  const eventsQuery = trpc.events.list.useQuery();
+  const events = eventsQuery.data || [];
   const event = events.find(e => e.id === eventId);
 
   const [quantities, setQuantities] = useState<{ [tierId: string]: number }>({});
@@ -22,7 +23,7 @@ export default function PurchaseScreen() {
   const [buyerPhone, setBuyerPhone] = useState('');
   const [sellerCode, setSellerCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
-  const [isProcessing, setIsProcessing] = useState(false);
+
   
   // Datos demográficos
   const [buyerBirthdate, setBuyerBirthdate] = useState('');
@@ -82,13 +83,13 @@ export default function PurchaseScreen() {
   };
 
   const getExtrasTotal = (tierId: string): number => {
-    const tier = event.ticketTiers.find(t => t.id === tierId);
+    const tier = event.ticketTiers.find(t => t.id === tierId) as any;
     if (!tier || !tier.extras) return 0;
     
     const qty = quantities[tierId] || 0;
     if (qty === 0) return 0;
     
-    return tier.extras.reduce((sum, extra) => {
+    return tier.extras.reduce((sum: number, extra: { id: string; price: number }) => {
       if (selectedExtras[tierId]?.[extra.id]) {
         return sum + (extra.price * qty);
       }
@@ -119,53 +120,35 @@ export default function PurchaseScreen() {
       return;
     }
 
-    setIsProcessing(true);
-
-    const seller = sellerCode ? getSellerByCode(sellerCode) : null;
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      for (const tier of event.ticketTiers) {
-        const qty = quantities[tier.id] || 0;
-        for (let i = 0; i < qty; i++) {
-          // Convertir fecha DD/MM/YYYY a YYYY-MM-DD para la base de datos
-          let formattedBirthdate = null;
-          if (buyerBirthdate && buyerBirthdate.length === 10) {
-            const [day, month, year] = buyerBirthdate.split('/');
-            formattedBirthdate = `${year}-${month}-${day}`;
-          }
-          
-          await addTicket({
-            eventId: event.id,
-            tierId: tier.id,
-            buyerName: buyerName.trim(),
-            buyerEmail: buyerEmail.trim(),
-            buyerPhone: buyerPhone.trim(),
-            buyerBirthdate: formattedBirthdate || undefined,
-            buyerGender: buyerGender || undefined,
-            buyerCity: buyerCity.trim() || undefined,
-            buyerCountry: buyerCountry || undefined,
-            sellerId: seller?.id,
-            sellerCode: seller?.code,
-            paymentMethod,
-            price: tier.price,
-          });
-        }
-      }
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
-        '¡Compra completada!',
-        `Se han comprado ${totalTickets} entrada(s). Recibirás los QR por email.`,
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-    } catch (error) {
-      console.log('Purchase error:', error);
-      Alert.alert('Error', 'No se pudo procesar el pago');
-    } finally {
-      setIsProcessing(false);
+    // Encontrar el primer tier con cantidad > 0 para el checkout
+    const selectedTier = event.ticketTiers.find(tier => (quantities[tier.id] || 0) > 0);
+    if (!selectedTier) {
+      Alert.alert('Error', 'Selecciona al menos una entrada');
+      return;
     }
+
+    const qty = quantities[selectedTier.id] || 0;
+    const tierTotal = qty * selectedTier.price;
+    const extrasTotal = getExtrasTotal(selectedTier.id);
+    const total = tierTotal + extrasTotal;
+
+    // Redirigir al checkout con los datos del pago
+    router.push({
+      pathname: '/checkout/[eventId]',
+      params: {
+        eventId: event.id,
+        eventName: event.name,
+        tierId: selectedTier.id,
+        tierName: selectedTier.name,
+        quantity: String(qty),
+        unitPrice: String(selectedTier.price),
+        totalAmount: String(total),
+        buyerName: buyerName.trim(),
+        buyerEmail: buyerEmail.trim(),
+        buyerPhone: buyerPhone.trim() || '',
+        sellerCode: sellerCode || '',
+      },
+    });
   };
 
   const paymentMethods: { id: PaymentMethod; label: string; icon: React.ReactNode }[] = [
@@ -230,10 +213,10 @@ export default function PurchaseScreen() {
                 </View>
               </View>
 
-              {qty > 0 && tier.extras && tier.extras.length > 0 && (
+              {qty > 0 && (tier as any).extras && (tier as any).extras.length > 0 && (
                 <View style={styles.extrasContainer}>
                   <Text style={styles.extrasTitle}>Extras opcionales (se añaden al precio base):</Text>
-                  {tier.extras.map((extra) => {
+                  {(tier as any).extras.map((extra: { id: string; name: string; price: number; description?: string }) => {
                     const isSelected = selectedExtras[tier.id]?.[extra.id] || false;
                     return (
                       <TouchableOpacity
@@ -500,18 +483,18 @@ export default function PurchaseScreen() {
           <Text style={styles.totalAmount}>{formatCurrency(totalAmount)}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.purchaseButton, (totalTickets === 0 || isProcessing) && styles.purchaseButtonDisabled]}
+          style={[styles.purchaseButton, totalTickets === 0 && styles.purchaseButtonDisabled]}
           onPress={handlePurchase}
-          disabled={totalTickets === 0 || isProcessing}
+          disabled={totalTickets === 0}
         >
           <LinearGradient
-            colors={totalTickets > 0 && !isProcessing ? Colors.dark.gradient.primary as [string, string] : [Colors.dark.textMuted, Colors.dark.textMuted]}
+            colors={totalTickets > 0 ? Colors.dark.gradient.primary as [string, string] : [Colors.dark.textMuted, Colors.dark.textMuted]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.purchaseGradient}
           >
             <Text style={styles.purchaseText}>
-              {isProcessing ? 'Procesando...' : 'Pagar ahora'}
+              Continuar al pago
             </Text>
           </LinearGradient>
         </TouchableOpacity>

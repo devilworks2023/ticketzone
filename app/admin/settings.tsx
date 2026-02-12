@@ -32,7 +32,6 @@ export default function AdminSettingsScreen() {
 
   const settingsQuery = trpc.settings.getAll.useQuery();
   const updateSettingsMutation = trpc.settings.setMultiple.useMutation();
-  const debugQuery = trpc.settings.debug.useQuery(undefined, { enabled: false });
 
   useEffect(() => {
     if (settingsQuery.data) {
@@ -71,21 +70,38 @@ export default function AdminSettingsScreen() {
     console.log('[SETTINGS] Guardando configuración:', settingsToSave);
     
     try {
+      console.log('[SETTINGS] Enviando mutation...');
       const result = await updateSettingsMutation.mutateAsync(settingsToSave);
       console.log('[SETTINGS] Respuesta del servidor:', JSON.stringify(result));
       
-      // Esperar un momento y recargar
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const refreshed = await settingsQuery.refetch();
-      console.log('[SETTINGS] Configuración recargada:', JSON.stringify(refreshed.data));
-      
-      Alert.alert(
-        'Éxito', 
-        `Configuración guardada correctamente.\n\nValores guardados:\n- Comisión: ${platformCommission}%\n- Retiro adelantado: ${earlyWithdrawalFee}%`
-      );
+      if (result.success) {
+        // Esperar un momento y recargar
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const refreshed = await settingsQuery.refetch();
+        console.log('[SETTINGS] Configuración recargada:', JSON.stringify(refreshed.data));
+        
+        // Verificar que los valores se guardaron
+        const stripeOk = refreshed.data?.stripe_enabled === settingsToSave.stripe_enabled;
+        const commissionOk = refreshed.data?.platform_commission === settingsToSave.platform_commission;
+        
+        if (stripeOk && commissionOk) {
+          Alert.alert(
+            'Éxito', 
+            `Configuración guardada correctamente.\n\nValores guardados:\n- Stripe: ${stripeEnabled ? 'Habilitado' : 'Deshabilitado'}\n- Comisión: ${platformCommission}%\n- Retiro adelantado: ${earlyWithdrawalFee}%`
+          );
+        } else {
+          Alert.alert(
+            'Advertencia', 
+            `La configuración se envió pero puede haber un problema de sincronización.\n\nIntenta recargar la página.`
+          );
+        }
+      } else {
+        Alert.alert('Error', 'El servidor respondió pero no confirmó el guardado');
+      }
     } catch (error: any) {
       console.error('[SETTINGS] Error guardando configuración:', error);
-      Alert.alert('Error', `No se pudo guardar: ${error.message || 'Error desconocido'}`);
+      const errorMsg = error?.message || error?.data?.message || 'Error desconocido';
+      Alert.alert('Error', `No se pudo guardar: ${errorMsg}`);
     } finally {
       setIsSaving(false);
     }
@@ -93,11 +109,11 @@ export default function AdminSettingsScreen() {
 
   const handleDebug = async () => {
     try {
-      const result = await debugQuery.refetch();
+      const result = await settingsQuery.refetch();
       console.log('[DEBUG] Estado de la base de datos:', JSON.stringify(result.data, null, 2));
       Alert.alert(
         'Debug - Base de Datos',
-        `Ruta DB: ${result.data?.dbPath || 'N/A'}\n\nSettings guardados:\n${JSON.stringify(result.data?.settings, null, 2)}\n\nTimestamp: ${result.data?.timestamp}`
+        `Settings guardados:\n${JSON.stringify(result.data, null, 2)}`
       );
     } catch (error: any) {
       Alert.alert('Error Debug', error.message);

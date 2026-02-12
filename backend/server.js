@@ -1089,6 +1089,30 @@ const paymentsRouter = createTRPCRouter({
     buyerLongitude: z.number().optional(),
     sellerCode: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    // IMPORTANTE: Verificar que el pago fue exitoso en Stripe antes de crear entradas
+    if (!stripe) {
+      throw new Error('Stripe no está configurado. Contacta al administrador.');
+    }
+
+    // Verificar estado del PaymentIntent con Stripe
+    console.log('[STRIPE] Verificando PaymentIntent:', input.paymentIntentId);
+    const paymentIntent = await stripe.paymentIntents.retrieve(input.paymentIntentId);
+    
+    if (paymentIntent.status !== 'succeeded') {
+      console.error('[STRIPE] PaymentIntent no completado:', paymentIntent.status);
+      throw new Error(`El pago no se ha completado. Estado: ${paymentIntent.status}`);
+    }
+
+    // Verificar que no se hayan creado entradas ya para este PaymentIntent (evitar duplicados)
+    const existingTickets = ctx.db.prepare('SELECT COUNT(*) as count FROM tickets WHERE payment_intent_id = ?').get(input.paymentIntentId);
+    if (existingTickets.count > 0) {
+      console.log('[STRIPE] Entradas ya creadas para este PaymentIntent');
+      const tickets = ctx.db.prepare('SELECT id, qr_code as qrCode, price FROM tickets WHERE payment_intent_id = ?').all(input.paymentIntentId);
+      return { success: true, tickets, total: tickets.reduce((sum, t) => sum + t.price, 0), alreadyProcessed: true };
+    }
+
+    console.log('[STRIPE] PaymentIntent verificado exitosamente:', paymentIntent.id);
+
     const tier = ctx.db.prepare('SELECT * FROM ticket_tiers WHERE id = ?').get(input.tierId);
     if (!tier) throw new Error('Tipo de entrada no encontrado');
 

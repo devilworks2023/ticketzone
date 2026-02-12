@@ -401,8 +401,18 @@ export default function CreateEventScreen() {
           </View>
         ))}
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
+
+      <View style={styles.bottomBar}>
+        <TouchableOpacity 
+          style={styles.createButton} 
+          onPress={handleCreate}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.createButtonText}>Crear Evento</Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -642,5 +652,27 @@ const styles = StyleSheet.create({
     padding: 10,
     fontSize: 14,
     textAlign: 'center',
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 24,
+    backgroundColor: Colors.dark.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+  },
+  createButton: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 14,
+    padding: 18,
+    alignItems: 'center',
+  },
+  createButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFF',
   },
 });

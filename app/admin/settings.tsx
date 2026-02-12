@@ -59,7 +59,7 @@ export default function AdminSettingsScreen() {
     
     setIsSaving(true);
     
-    const settingsToSave = {
+    const settingsToSave: Record<string, string> = {
       platform_name: platformName.trim(),
       currency: currency,
       stripe_enabled: stripeEnabled ? 'true' : 'false',
@@ -67,63 +67,37 @@ export default function AdminSettingsScreen() {
       early_withdrawal_fee: String(earlyWithdrawalFee).trim(),
     };
     
-    console.log('[SETTINGS] Guardando configuración:', JSON.stringify(settingsToSave));
+    console.log('[SETTINGS] ========================================');
+    console.log('[SETTINGS] Guardando configuración...');
+    console.log('[SETTINGS] Datos:', JSON.stringify(settingsToSave, null, 2));
     
     try {
-      console.log('[SETTINGS] Enviando mutation...');
       const result = await updateSettingsMutation.mutateAsync(settingsToSave);
-      console.log('[SETTINGS] Respuesta del servidor:', JSON.stringify(result));
+      console.log('[SETTINGS] Respuesta:', JSON.stringify(result));
       
-      if (result && result.success) {
-        // Esperar un momento para que la DB se sincronice
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Recargar configuración
+      if (result?.success) {
+        // Esperar y recargar
+        await new Promise(resolve => setTimeout(resolve, 800));
         const refreshed = await settingsQuery.refetch();
-        console.log('[SETTINGS] Configuración recargada:', JSON.stringify(refreshed.data));
+        console.log('[SETTINGS] Datos recargados:', JSON.stringify(refreshed.data));
         
-        // Verificar que los valores se guardaron
-        const stripeOk = refreshed.data?.stripe_enabled === settingsToSave.stripe_enabled;
-        const commissionOk = refreshed.data?.platform_commission === settingsToSave.platform_commission;
-        
-        if (stripeOk && commissionOk) {
-          Alert.alert(
-            'Éxito', 
-            `Configuración guardada correctamente.\n\nValores guardados:\n- Stripe: ${stripeEnabled ? 'Habilitado' : 'Deshabilitado'}\n- Comisión: ${platformCommission}%\n- Retiro adelantado: ${earlyWithdrawalFee}%`
-          );
-        } else {
-          // Intentar una vez más
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const secondRefresh = await settingsQuery.refetch();
-          
-          const stripeOk2 = secondRefresh.data?.stripe_enabled === settingsToSave.stripe_enabled;
-          const commissionOk2 = secondRefresh.data?.platform_commission === settingsToSave.platform_commission;
-          
-          if (stripeOk2 && commissionOk2) {
-            Alert.alert('Éxito', 'Configuración guardada correctamente.');
-          } else {
-            Alert.alert(
-              'Advertencia', 
-              `La configuración se envió pero la verificación falló.\n\nRecibido del servidor:\n- Stripe: ${secondRefresh.data?.stripe_enabled}\n- Comisión: ${secondRefresh.data?.platform_commission}\n\nEsperado:\n- Stripe: ${settingsToSave.stripe_enabled}\n- Comisión: ${settingsToSave.platform_commission}`
-            );
-          }
-        }
+        Alert.alert(
+          'Éxito', 
+          `Configuración guardada.\n\n` +
+          `• Stripe: ${stripeEnabled ? 'Habilitado' : 'Deshabilitado'}\n` +
+          `• Comisión: ${platformCommission}%\n` +
+          `• Retiro adelantado: ${earlyWithdrawalFee}%`
+        );
       } else {
-        Alert.alert('Error', 'El servidor no confirmó el guardado. Respuesta: ' + JSON.stringify(result));
+        Alert.alert('Error', 'El servidor no confirmó el guardado');
       }
     } catch (error: any) {
-      console.error('[SETTINGS] Error guardando configuración:', error);
-      let errorMsg = 'Error desconocido';
-      if (error?.message) {
-        errorMsg = error.message;
-      } else if (error?.data?.message) {
-        errorMsg = error.data.message;
-      } else if (typeof error === 'string') {
-        errorMsg = error;
-      }
-      Alert.alert('Error', `No se pudo guardar la configuración:\n\n${errorMsg}`);
+      console.error('[SETTINGS] Error:', error);
+      const errorMsg = error?.message || error?.data?.message || 'Error desconocido';
+      Alert.alert('Error', `No se pudo guardar:\n\n${errorMsg}`);
     } finally {
       setIsSaving(false);
+      console.log('[SETTINGS] ========================================');
     }
   };
 

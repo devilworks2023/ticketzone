@@ -35,7 +35,7 @@ export default function PublicEventsScreen() {
   const { buyerEmail, saveBuyerEmail, isAuthenticated } = useAuth();
   
   const eventsQuery = trpc.events.list.useQuery();
-  const ticketsQuery = trpc.tickets.getByEmail.useQuery(
+  const ticketsQuery = (trpc.tickets as any).getByEmail.useQuery(
     { email: buyerEmail || '' },
     { enabled: !!buyerEmail }
   );
@@ -111,7 +111,7 @@ export default function PublicEventsScreen() {
               </View>
             ) : (
               <View style={styles.ticketsList}>
-                {myTickets.map(ticket => (
+                {myTickets.map((ticket: any) => (
                     <View key={ticket.id} style={styles.ticketCard}>
                       <View style={styles.ticketHeader}>
                         <View style={[

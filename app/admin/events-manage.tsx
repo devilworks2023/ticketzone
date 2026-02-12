@@ -27,7 +27,7 @@ import { trpc } from '@/lib/trpc';
 export default function AdminEventsManageScreen() {
   const eventsQuery = trpc.events.list.useQuery();
   const deleteEventMutation = trpc.events.delete.useMutation();
-  const toggleEventMutation = trpc.events.toggleActive.useMutation();
+  const toggleEventMutation = (trpc.events as any).toggleActive.useMutation();
 
   const events = eventsQuery.data || [];
 

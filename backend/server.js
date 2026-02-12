@@ -465,10 +465,21 @@ const eventsRouter = createTRPCRouter({
   }),
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-    // Primero eliminar ticket_tiers relacionados
+    // Primero eliminar tickets relacionados
+    ctx.db.prepare('DELETE FROM tickets WHERE event_id = ?').run(input.id);
+    // Luego eliminar ticket_tiers relacionados
     ctx.db.prepare('DELETE FROM ticket_tiers WHERE event_id = ?').run(input.id);
-    // Luego eliminar el evento
+    // Finalmente eliminar el evento
     ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+    return { success: true };
+  }),
+
+  toggleActive: publicProcedure.input(z.object({ 
+    id: z.string(), 
+    isActive: z.boolean() 
+  })).mutation(({ ctx, input }) => {
+    ctx.db.prepare('UPDATE events SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(input.isActive ? 1 : 0, input.id);
     return { success: true };
   }),
 });
@@ -489,6 +500,49 @@ const ticketsRouter = createTRPCRouter({
       sellerId: t.seller_id, sellerName: t.seller_name, sellerCode: t.seller_code,
       isUsed: Boolean(t.is_used), usedAt: t.used_at, paymentMethod: t.payment_method,
       price: t.price, platformFee: t.platform_fee, promoterAmount: t.promoter_amount,
+    }));
+  }),
+
+  listAll: publicProcedure.query(({ ctx }) => {
+    const tickets = ctx.db.prepare(`
+      SELECT t.*, e.name as event_name, tt.name as tier_name, s.name as seller_name
+      FROM tickets t 
+      JOIN events e ON t.event_id = e.id
+      JOIN ticket_tiers tt ON t.tier_id = tt.id 
+      LEFT JOIN sellers s ON t.seller_id = s.id
+      ORDER BY t.purchase_date DESC
+      LIMIT 1000
+    `).all();
+    return tickets.map(t => ({
+      id: t.id, eventId: t.event_id, eventName: t.event_name, tierId: t.tier_id,
+      tierName: t.tier_name, buyerName: t.buyer_name, buyerEmail: t.buyer_email,
+      buyerPhone: t.buyer_phone, qrCode: t.qr_code, purchaseDate: t.purchase_date,
+      sellerId: t.seller_id, sellerName: t.seller_name, sellerCode: t.seller_code,
+      isUsed: Boolean(t.is_used), usedAt: t.used_at, paymentMethod: t.payment_method,
+      price: t.price, platformFee: t.platform_fee, promoterAmount: t.promoter_amount,
+    }));
+  }),
+
+  getByEmail: publicProcedure.input(z.object({ email: z.string().email() })).query(({ ctx, input }) => {
+    const tickets = ctx.db.prepare(`
+      SELECT t.*, e.name as event_name, e.date as event_date, e.time as event_time, e.venue,
+             tt.name as tier_name, s.name as seller_name
+      FROM tickets t 
+      JOIN events e ON t.event_id = e.id
+      JOIN ticket_tiers tt ON t.tier_id = tt.id 
+      LEFT JOIN sellers s ON t.seller_id = s.id
+      WHERE LOWER(t.buyer_email) = LOWER(?)
+      ORDER BY t.purchase_date DESC
+    `).all(input.email);
+    return tickets.map(t => ({
+      id: t.id, eventId: t.event_id, eventName: t.event_name, 
+      eventDate: t.event_date, eventTime: t.event_time, venue: t.venue,
+      tierId: t.tier_id, tierName: t.tier_name, 
+      buyerName: t.buyer_name, buyerEmail: t.buyer_email, buyerPhone: t.buyer_phone, 
+      qrCode: t.qr_code, purchaseDate: t.purchase_date,
+      sellerId: t.seller_id, sellerName: t.seller_name, sellerCode: t.seller_code,
+      isUsed: Boolean(t.is_used), usedAt: t.used_at, paymentMethod: t.payment_method,
+      price: t.price,
     }));
   }),
 

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TextInput,
+  Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,18 +18,64 @@ import {
   User,
   Mail,
   CheckCircle,
-  XCircle,
-  Filter,
+  Trash2,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+
+interface TicketData {
+  id: string;
+  eventId: string;
+  eventName: string;
+  tierId: string;
+  tierName: string;
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone: string;
+  qrCode: string;
+  purchaseDate: string;
+  sellerId: string | null;
+  sellerName: string | null;
+  sellerCode: string | null;
+  isUsed: boolean;
+  usedAt: string | null;
+  paymentMethod: string;
+  price: number;
+  platformFee: number;
+  promoterAmount: number;
+}
 
 export default function AdminTicketsManageScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterUsed, setFilterUsed] = useState<'all' | 'used' | 'unused'>('all');
 
-  const ticketsQuery = trpc.tickets.listAll.useQuery();
-  const tickets = ticketsQuery.data || [];
+  const ticketsQuery = (trpc.tickets as any).listAll.useQuery();
+  const deleteTicketMutation = (trpc.tickets as any).delete.useMutation();
+  const tickets: TicketData[] = ticketsQuery.data || [];
+
+  const handleDeleteTicket = (ticket: TicketData) => {
+    Alert.alert(
+      'Eliminar Entrada',
+      `¿Estás seguro de eliminar la entrada de ${ticket.buyerName}?\n\nEsta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteTicketMutation.mutateAsync({ id: ticket.id });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              ticketsQuery.refetch();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'No se pudo eliminar la entrada');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch = 
@@ -60,8 +107,8 @@ export default function AdminTicketsManageScreen() {
     return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(amount);
   };
 
-  const usedCount = tickets.filter(t => t.isUsed).length;
-  const unusedCount = tickets.filter(t => !t.isUsed).length;
+  const usedCount = tickets.filter((t: TicketData) => t.isUsed).length;
+  const unusedCount = tickets.filter((t: TicketData) => !t.isUsed).length;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -132,7 +179,7 @@ export default function AdminTicketsManageScreen() {
             </Text>
           </View>
         ) : (
-          filteredTickets.map((ticket) => (
+          filteredTickets.map((ticket: TicketData) => (
             <View key={ticket.id} style={styles.ticketCard}>
               <View style={styles.ticketHeader}>
                 <View style={[
@@ -182,6 +229,14 @@ export default function AdminTicketsManageScreen() {
                   <Text style={styles.sellerCode}>{ticket.sellerCode}</Text>
                 </View>
               )}
+
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => handleDeleteTicket(ticket)}
+              >
+                <Trash2 color={Colors.dark.error} size={16} />
+                <Text style={styles.deleteButtonText}>Eliminar</Text>
+              </TouchableOpacity>
             </View>
           ))
         )}
@@ -366,5 +421,20 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.dark.error + '15',
+    borderRadius: 8,
+  },
+  deleteButtonText: {
+    color: Colors.dark.error,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

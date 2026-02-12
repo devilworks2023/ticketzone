@@ -1515,14 +1515,14 @@ const settingsRouter = createTRPCRouter({
   set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
     console.log('[SETTINGS] set called:', input.key, '=', input.value);
     try {
-      const stmt = ctx.db.prepare(`
+      // Guardar directamente sin transacción para simplicidad
+      ctx.db.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-      `);
-      stmt.run(input.key, input.value);
+      `).run(input.key, String(input.value));
       
-      // Forzar checkpoint WAL
-      try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+      // Forzar sync al disco
+      ctx.db.pragma('wal_checkpoint(TRUNCATE)');
       
       const saved = ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get(input.key);
       console.log('[SETTINGS] Verified saved value:', input.key, '=', saved?.value);
@@ -1542,32 +1542,21 @@ const settingsRouter = createTRPCRouter({
     console.log('[SETTINGS] Datos recibidos:', JSON.stringify(input, null, 2));
     
     try {
-      // Usar una transacción para asegurar atomicidad
-      const saveSettings = ctx.db.transaction((settings) => {
-        const stmt = ctx.db.prepare(`
+      // Guardar cada setting directamente
+      for (const [key, value] of Object.entries(input)) {
+        console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
+        ctx.db.prepare(`
           INSERT INTO settings (key, value, updated_at) 
           VALUES (?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(key) DO UPDATE SET 
             value = excluded.value, 
             updated_at = CURRENT_TIMESTAMP
-        `);
-        
-        for (const [key, value] of Object.entries(settings)) {
-          console.log(`[SETTINGS] Guardando: ${key} = ${value}`);
-          stmt.run(key, String(value));
-        }
-      });
-      
-      // Ejecutar la transacción
-      saveSettings(input);
-      
-      // Forzar escritura al disco con checkpoint WAL
-      try {
-        ctx.db.pragma('wal_checkpoint(TRUNCATE)');
-        console.log('[SETTINGS] WAL checkpoint OK - datos escritos al disco');
-      } catch (walError) {
-        console.log('[SETTINGS] WAL checkpoint warning:', walError.message);
+        `).run(key, String(value));
       }
+      
+      // Forzar escritura INMEDIATA al disco
+      ctx.db.pragma('wal_checkpoint(TRUNCATE)');
+      console.log('[SETTINGS] WAL checkpoint TRUNCATE completado');
       
       // Verificar que se guardaron correctamente
       const allSettings = ctx.db.prepare('SELECT key, value FROM settings').all();
@@ -1589,6 +1578,7 @@ const settingsRouter = createTRPCRouter({
       console.log('');
       
       if (!allOk) {
+        console.error('[SETTINGS] ERROR: Algunos valores no coinciden después del guardado');
         throw new Error('Algunos valores no se guardaron correctamente');
       }
       
@@ -2405,8 +2395,8 @@ const subscriptionsRouter = createTRPCRouter({
           VALUES (?, ?, ?, ?, ?, ?, 1)
         `).run(id, input.name, price, maxEvents, input.description || '', JSON.stringify(input.features || []));
         
-        // Forzar checkpoint WAL
-        try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+        // Forzar escritura INMEDIATA al disco
+        ctx.db.pragma('wal_checkpoint(TRUNCATE)');
         
         // Verificar que se creó
         const created = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(id);
@@ -2462,8 +2452,8 @@ const subscriptionsRouter = createTRPCRouter({
           console.log('[SUBSCRIPTIONS] Executing SQL:', sql, 'with values:', values);
           ctx.db.prepare(sql).run(...values);
           
-          // Forzar checkpoint WAL
-          try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+          // Forzar escritura INMEDIATA al disco
+          ctx.db.pragma('wal_checkpoint(TRUNCATE)');
           
           // Verificar actualización
           const updated = ctx.db.prepare('SELECT * FROM subscription_plans WHERE id = ?').get(input.id);
@@ -2492,8 +2482,8 @@ const subscriptionsRouter = createTRPCRouter({
         
         ctx.db.prepare('DELETE FROM subscription_plans WHERE id = ?').run(input.id);
         
-        // Forzar checkpoint WAL
-        try { ctx.db.pragma('wal_checkpoint(PASSIVE)'); } catch (_e) { /* ignore */ }
+        // Forzar escritura INMEDIATA al disco
+        ctx.db.pragma('wal_checkpoint(TRUNCATE)');
         
         console.log('[SUBSCRIPTIONS] Plan deleted:', input.id);
         return { success: true };

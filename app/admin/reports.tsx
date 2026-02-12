@@ -21,7 +21,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react-native';
-import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 
@@ -113,21 +112,6 @@ function ChartBar({ label, value, maxValue, color }: ChartBarProps) {
   );
 }
 
-const darkMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#212121' }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
-  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#757575' }] },
-  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#373737' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3c3c3c' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d3d3d' }] },
-];
-
 export default function AdminReportsScreen() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     gender: true,
@@ -198,25 +182,6 @@ export default function AdminReportsScreen() {
     if (!analytics?.weekdaySales) return 1;
     return Math.max(...analytics.weekdaySales.map((w: WeekdayData) => w.count), 1);
   }, [analytics?.weekdaySales]);
-
-  const mapRegion: Region = useMemo(() => {
-    if (!analytics?.locations || analytics.locations.length === 0) {
-      return { latitude: 40.4168, longitude: -3.7038, latitudeDelta: 10, longitudeDelta: 10 };
-    }
-    const lats = analytics.locations.map((l: LocationData) => l.latitude);
-    const lngs = analytics.locations.map((l: LocationData) => l.longitude);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    
-    return {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLng + maxLng) / 2,
-      latitudeDelta: Math.max(maxLat - minLat, 0.5) * 1.5,
-      longitudeDelta: Math.max(maxLng - minLng, 0.5) * 1.5,
-    };
-  }, [analytics?.locations]);
 
   const dataCompleteness = useMemo(() => {
     if (!analytics?.totals) return { gender: 0, age: 0, location: 0 };
@@ -445,36 +410,29 @@ export default function AdminReportsScreen() {
               <View style={styles.sectionContent}>
                 {analytics?.locations && analytics.locations.length > 0 ? (
                   <View style={styles.mapContainer}>
-                    <MapView
-                      style={styles.map}
-                      initialRegion={mapRegion}
-                      customMapStyle={darkMapStyle}
-                    >
-                      {analytics.locations.map((loc: LocationData, index: number) => (
-                        <React.Fragment key={index}>
-                          <Circle
-                            center={{ latitude: loc.latitude, longitude: loc.longitude }}
-                            radius={Math.max(loc.count * 5000, 10000)}
-                            fillColor="rgba(102, 126, 234, 0.3)"
-                            strokeColor="rgba(102, 126, 234, 0.8)"
-                            strokeWidth={2}
-                          />
-                          <Marker
-                            coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-                            title={`${loc.city}, ${loc.country}`}
-                            description={`${loc.count} entradas - ${formatCurrency(loc.revenue)}`}
-                          />
-                        </React.Fragment>
-                      ))}
-                    </MapView>
-                    <View style={styles.mapLegend}>
-                      <Text style={styles.mapLegendText}>
-                        {analytics.locations.length} ubicaciones • Toca los marcadores para más info
-                      </Text>
+                    <View style={styles.webMapFallback}>
+                      <MapPin color={Colors.dark.primary} size={40} />
+                      <Text style={styles.webMapTitle}>Ubicaciones de compradores</Text>
+                      <View style={styles.locationsList}>
+                        {analytics.locations.slice(0, 8).map((loc: LocationData, index: number) => (
+                          <View key={index} style={styles.locationItem}>
+                            <View style={styles.locationHeader}>
+                              <Text style={styles.locationCity}>{loc.city}, {loc.country}</Text>
+                              <Text style={styles.locationCount}>{loc.count}</Text>
+                            </View>
+                            <Text style={styles.locationStats}>{formatCurrency(loc.revenue)}</Text>
+                          </View>
+                        ))}
+                        {analytics.locations.length > 8 && (
+                          <Text style={styles.moreLocations}>
+                            +{analytics.locations.length - 8} ubicaciones más
+                          </Text>
+                        )}
+                      </View>
                     </View>
                   </View>
                 ) : (
-                  <Text style={styles.noDataText}>No hay datos de coordenadas disponibles para el mapa</Text>
+                  <Text style={styles.noDataText}>No hay datos de coordenadas disponibles</Text>
                 )}
               </View>
             )}
@@ -772,6 +730,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.dark.textMuted,
     textAlign: 'center',
+  },
+  webMapFallback: {
+    backgroundColor: Colors.dark.background,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+  },
+  webMapTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.dark.text,
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  locationsList: {
+    width: '100%',
+    gap: 10,
+  },
+  locationItem: {
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    padding: 12,
+  },
+  locationCity: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.dark.text,
+  },
+  locationStats: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    marginTop: 2,
+  },
+  locationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  locationCount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.dark.primary,
+  },
+  moreLocations: {
+    fontSize: 12,
+    color: Colors.dark.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
   },
   weekdayChart: {
     flexDirection: 'row',

@@ -465,13 +465,41 @@ const eventsRouter = createTRPCRouter({
   }),
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-    // Primero eliminar tickets relacionados
-    ctx.db.prepare('DELETE FROM tickets WHERE event_id = ?').run(input.id);
-    // Luego eliminar ticket_tiers relacionados
-    ctx.db.prepare('DELETE FROM ticket_tiers WHERE event_id = ?').run(input.id);
-    // Finalmente eliminar el evento
-    ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
-    return { success: true };
+    console.log('[EVENTS] Eliminando evento:', input.id);
+    
+    try {
+      // Verificar que el evento existe
+      const event = ctx.db.prepare('SELECT * FROM events WHERE id = ?').get(input.id);
+      if (!event) {
+        throw new Error('Evento no encontrado');
+      }
+      
+      // Contar entradas asociadas
+      const ticketCount = ctx.db.prepare('SELECT COUNT(*) as count FROM tickets WHERE event_id = ?').get(input.id);
+      console.log('[EVENTS] Entradas a eliminar:', ticketCount?.count || 0);
+      
+      // Primero eliminar tickets relacionados
+      const ticketsResult = ctx.db.prepare('DELETE FROM tickets WHERE event_id = ?').run(input.id);
+      console.log('[EVENTS] Entradas eliminadas:', ticketsResult.changes);
+      
+      // Luego eliminar ticket_tiers relacionados
+      const tiersResult = ctx.db.prepare('DELETE FROM ticket_tiers WHERE event_id = ?').run(input.id);
+      console.log('[EVENTS] Tiers eliminados:', tiersResult.changes);
+      
+      // Finalmente eliminar el evento
+      const eventResult = ctx.db.prepare('DELETE FROM events WHERE id = ?').run(input.id);
+      console.log('[EVENTS] Evento eliminado:', eventResult.changes);
+      
+      if (eventResult.changes === 0) {
+        throw new Error('No se pudo eliminar el evento');
+      }
+      
+      console.log('[EVENTS] Evento eliminado exitosamente:', input.id);
+      return { success: true };
+    } catch (error) {
+      console.error('[EVENTS] Error eliminando evento:', error);
+      throw new Error(error.message || 'Error al eliminar el evento');
+    }
   }),
 
   toggleActive: publicProcedure.input(z.object({ 
@@ -619,21 +647,42 @@ const ticketsRouter = createTRPCRouter({
   }),
 
   delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-    const ticket = ctx.db.prepare('SELECT * FROM tickets WHERE id = ?').get(input.id);
-    if (!ticket) throw new Error('Entrada no encontrada');
+    console.log('[TICKETS] Eliminando entrada:', input.id);
     
-    // Decrementar el contador de vendidos en el tier
-    ctx.db.prepare('UPDATE ticket_tiers SET sold = sold - 1 WHERE id = ? AND sold > 0').run(ticket.tier_id);
-    
-    // Si hay vendedor, decrementar sus estadísticas
-    if (ticket.seller_id) {
-      ctx.db.prepare('UPDATE sellers SET total_sales = total_sales - 1, total_revenue = total_revenue - ? WHERE id = ? AND total_sales > 0')
-        .run(ticket.price, ticket.seller_id);
+    try {
+      const ticket = ctx.db.prepare('SELECT * FROM tickets WHERE id = ?').get(input.id);
+      if (!ticket) {
+        console.error('[TICKETS] Entrada no encontrada:', input.id);
+        throw new Error('Entrada no encontrada');
+      }
+      
+      console.log('[TICKETS] Entrada encontrada:', { id: ticket.id, tierId: ticket.tier_id, sellerId: ticket.seller_id });
+      
+      // Decrementar el contador de vendidos en el tier
+      const tierResult = ctx.db.prepare('UPDATE ticket_tiers SET sold = sold - 1 WHERE id = ? AND sold > 0').run(ticket.tier_id);
+      console.log('[TICKETS] Tier actualizado:', tierResult.changes);
+      
+      // Si hay vendedor, decrementar sus estadísticas
+      if (ticket.seller_id) {
+        const sellerResult = ctx.db.prepare('UPDATE sellers SET total_sales = total_sales - 1, total_revenue = total_revenue - ? WHERE id = ? AND total_sales > 0')
+          .run(ticket.price, ticket.seller_id);
+        console.log('[TICKETS] Vendedor actualizado:', sellerResult.changes);
+      }
+      
+      // Eliminar la entrada
+      const deleteResult = ctx.db.prepare('DELETE FROM tickets WHERE id = ?').run(input.id);
+      console.log('[TICKETS] Entrada eliminada:', deleteResult.changes);
+      
+      if (deleteResult.changes === 0) {
+        throw new Error('No se pudo eliminar la entrada');
+      }
+      
+      console.log('[TICKETS] Entrada eliminada exitosamente:', input.id);
+      return { success: true };
+    } catch (error) {
+      console.error('[TICKETS] Error eliminando entrada:', error);
+      throw new Error(error.message || 'Error al eliminar la entrada');
     }
-    
-    // Eliminar la entrada
-    ctx.db.prepare('DELETE FROM tickets WHERE id = ?').run(input.id);
-    return { success: true };
   }),
 
   validate: publicProcedure.input(z.object({ qrCode: z.string() })).mutation(({ ctx, input }) => {

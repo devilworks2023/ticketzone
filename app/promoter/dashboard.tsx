@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, Calendar, Ticket, DollarSign, ChevronRight, CreditCard, AlertCircle, CheckCircle, Clock, Building2, Crown, Users, ScanLine } from 'lucide-react-native';
+import { TrendingUp, Calendar, Ticket, DollarSign, ChevronRight, CreditCard, Building2, Crown, Users, ScanLine } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,7 +13,6 @@ interface PromoterStats {
   pendingPayout: number;
   totalEvents: number;
   totalTicketsSold: number;
-  stripeConnected: boolean;
 }
 
 interface PromoterEvent {
@@ -42,7 +41,6 @@ export default function PromoterDashboard() {
     pendingPayout: 0,
     totalEvents: 0,
     totalTicketsSold: 0,
-    stripeConnected: false,
   });
   
   const [events] = useState<PromoterEvent[]>([]);
@@ -54,7 +52,6 @@ export default function PromoterDashboard() {
         pendingPayout: currentPromoter.pendingPayout || 0,
         totalEvents: currentPromoter.eventCount || 0,
         totalTicketsSold: 0,
-        stripeConnected: currentPromoter.stripeAccountStatus === 'active',
       });
     }
   }, [currentPromoter]);
@@ -111,38 +108,12 @@ export default function PromoterDashboard() {
           </View>
         </View>
 
-        {!stats.stripeConnected && currentPromoter && (
-          <TouchableOpacity 
-            style={styles.stripeAlert}
-            onPress={() => router.push({
-              pathname: '/promoter/connect-stripe',
-              params: {
-                promoterId: currentPromoter.id,
-                email: currentPromoter.email,
-                name: currentPromoter.name,
-              },
-            })}
-          >
-            <LinearGradient
-              colors={[Colors.dark.warning + '20', Colors.dark.warning + '10']}
-              style={styles.stripeAlertGradient}
-            >
-              <AlertCircle color={Colors.dark.warning} size={24} />
-              <View style={styles.stripeAlertContent}>
-                <Text style={styles.stripeAlertTitle}>Conecta tu cuenta de Stripe</Text>
-                <Text style={styles.stripeAlertText}>
-                  Para recibir pagos directos de tus eventos
-                </Text>
-              </View>
-              <ChevronRight color={Colors.dark.warning} size={20} />
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {stats.stripeConnected && (
-          <View style={styles.stripeConnected}>
-            <CheckCircle color={Colors.dark.success} size={20} />
-            <Text style={styles.stripeConnectedText}>Stripe conectado</Text>
+        {stats.pendingPayout > 0 && (
+          <View style={styles.balanceAlert}>
+            <DollarSign color={Colors.dark.success} size={20} />
+            <Text style={styles.balanceAlertText}>
+              Tienes {formatCurrency(stats.pendingPayout)} pendiente de cobro
+            </Text>
           </View>
         )}
 
@@ -185,25 +156,7 @@ export default function PromoterDashboard() {
           </View>
         </View>
 
-        {stats.pendingPayout > 0 && stats.stripeConnected && (
-          <TouchableOpacity style={styles.payoutCard}>
-            <LinearGradient
-              colors={Colors.dark.gradient.secondary as [string, string]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.payoutGradient}
-            >
-              <View style={styles.payoutInfo}>
-                <Text style={styles.payoutLabel}>Próximo pago</Text>
-                <Text style={styles.payoutAmount}>{formatCurrency(stats.pendingPayout)}</Text>
-              </View>
-              <View style={styles.payoutAction}>
-                <Clock color="#FFF" size={16} />
-                <Text style={styles.payoutActionText}>En proceso</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
+        
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -336,45 +289,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stripeAlert: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  stripeAlertGradient: {
+  balanceAlert: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  stripeAlertContent: {
-    flex: 1,
-  },
-  stripeAlertTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.dark.warning,
-  },
-  stripeAlertText: {
-    fontSize: 13,
-    color: Colors.dark.textSecondary,
-    marginTop: 2,
-  },
-  stripeConnected: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginHorizontal: 20,
     marginBottom: 20,
-    padding: 12,
+    padding: 14,
     backgroundColor: Colors.dark.success + '15',
     borderRadius: 12,
   },
-  stripeConnectedText: {
+  balanceAlertText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.dark.success,
+    flex: 1,
   },
   statsGrid: {
     flexDirection: 'row',

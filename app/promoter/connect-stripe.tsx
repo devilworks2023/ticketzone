@@ -1,136 +1,45 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CreditCard, Shield, Zap, CheckCircle, ExternalLink, ArrowRight, Building2 } from 'lucide-react-native';
+import { Wallet, Shield, Clock, ArrowRight, Banknote, Info } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '@/constants/colors';
-import { trpc } from '@/lib/trpc';
 
-export default function ConnectStripeScreen() {
+export default function PaymentInfoScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const promoterId = params.promoterId as string;
-  const promoterEmail = params.email as string;
-  const promoterName = params.name as string;
-  
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [step, setStep] = useState<'intro' | 'connecting' | 'success'>('intro');
-  
 
-  const createOnboardingLink = trpc.payments.createConnectOnboardingLink.useMutation();
-
-  const handleConnectStripe = async () => {
-    if (!promoterId || !promoterEmail) {
-      Alert.alert('Error', 'Faltan datos del promotor. Por favor, vuelve atrás e intenta de nuevo.');
-      return;
-    }
-
-    setIsConnecting(true);
-    setStep('connecting');
-
-    try {
-      const baseUrl = Platform.OS === 'web' 
-        ? window.location.origin 
-        : 'https://tickets.devil-works.com';
-
-      const linkResult = await createOnboardingLink.mutateAsync({
-        promoterId,
-        returnUrl: `${baseUrl}/promoter/dashboard?connected=true&promoterId=${promoterId}`,
-        refreshUrl: `${baseUrl}/promoter/connect-stripe?promoterId=${promoterId}&email=${encodeURIComponent(promoterEmail)}&name=${encodeURIComponent(promoterName)}`,
-      });
-
-      if (Platform.OS === 'web') {
-        window.location.href = linkResult.url;
-      } else {
-        const canOpen = await Linking.canOpenURL(linkResult.url);
-        if (canOpen) {
-          await Linking.openURL(linkResult.url);
-          setStep('success');
-        } else {
-          Alert.alert('Error', 'No se puede abrir el enlace de Stripe');
-          setStep('intro');
-        }
-      }
-    } catch (error: any) {
-      console.error('Stripe Connect error:', error);
-      Alert.alert('Error', error.message || 'No se pudo conectar con Stripe');
-      setStep('intro');
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const benefits = [
-    {
-      icon: <Zap color={Colors.dark.warning} size={24} />,
-      title: 'Pagos instantáneos',
-      description: 'Recibe el dinero de tus ventas directamente en tu cuenta',
-    },
+  const features = [
     {
       icon: <Shield color={Colors.dark.success} size={24} />,
-      title: 'Seguro y protegido',
-      description: 'Stripe cumple con los más altos estándares de seguridad',
+      title: 'Pagos seguros',
+      description: 'Todas las transacciones están protegidas con encriptación SSL',
     },
     {
-      icon: <Building2 color={Colors.dark.secondary} size={24} />,
-      title: 'Panel de control',
-      description: 'Accede a reportes detallados y gestiona tus pagos',
+      icon: <Clock color={Colors.dark.warning} size={24} />,
+      title: 'Pagos periódicos',
+      description: 'Recibe tus ganancias de forma regular según lo acordado',
+    },
+    {
+      icon: <Banknote color={Colors.dark.secondary} size={24} />,
+      title: 'Transferencia bancaria',
+      description: 'El dinero se transfiere directamente a tu cuenta bancaria',
     },
   ];
 
-  if (step === 'success') {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.successContainer}>
-          <View style={styles.successIconContainer}>
-            <CheckCircle color={Colors.dark.success} size={80} />
-          </View>
-          <Text style={styles.successTitle}>¡Cuenta conectada!</Text>
-          <Text style={styles.successText}>
-            Tu cuenta de Stripe ha sido vinculada correctamente. Ahora recibirás los pagos de tus eventos directamente.
-          </Text>
-          <TouchableOpacity
-            style={styles.successButton}
-            onPress={() => router.replace('/promoter/dashboard')}
-          >
-            <LinearGradient
-              colors={Colors.dark.gradient.primary as [string, string]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.successButtonGradient}
-            >
-              <Text style={styles.successButtonText}>Ir al dashboard</Text>
-              <ArrowRight color="#FFF" size={20} />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (step === 'connecting') {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.connectingContainer}>
-          <ActivityIndicator size="large" color={Colors.dark.primary} />
-          <Text style={styles.connectingTitle}>Conectando con Stripe...</Text>
-          <Text style={styles.connectingText}>
-            Esto puede tardar unos segundos
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const steps = [
+    'Vende entradas para tus eventos',
+    'Acumula ganancias en tu balance',
+    'Solicita el pago cuando quieras',
+    'Recibe el dinero en tu cuenta',
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Stack.Screen 
         options={{ 
           headerShown: true,
-          title: 'Conectar Stripe',
+          title: 'Información de pagos',
           headerStyle: { backgroundColor: Colors.dark.background },
           headerTintColor: Colors.dark.text,
         }} 
@@ -139,62 +48,54 @@ export default function ConnectStripeScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <LinearGradient
-            colors={['#635BFF', '#A259FF']}
+            colors={[Colors.dark.success, '#10B981']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.heroIconContainer}
           >
-            <CreditCard color="#FFF" size={48} />
+            <Wallet color="#FFF" size={48} />
           </LinearGradient>
-          <Text style={styles.heroTitle}>Recibe pagos directos</Text>
+          <Text style={styles.heroTitle}>Recibe tus ganancias</Text>
           <Text style={styles.heroSubtitle}>
-            Conecta tu cuenta de Stripe para recibir el dinero de las ventas de entradas directamente, sin intermediarios.
+            Tus ganancias por venta de entradas se acumulan automáticamente y puedes solicitar el pago cuando lo necesites.
           </Text>
         </View>
 
-        <View style={styles.benefitsSection}>
-          <Text style={styles.benefitsTitle}>Beneficios</Text>
-          {benefits.map((benefit, index) => (
-            <View key={index} style={styles.benefitCard}>
-              <View style={styles.benefitIcon}>{benefit.icon}</View>
-              <View style={styles.benefitContent}>
-                <Text style={styles.benefitTitle}>{benefit.title}</Text>
-                <Text style={styles.benefitDescription}>{benefit.description}</Text>
+        <View style={styles.featuresSection}>
+          <Text style={styles.sectionTitle}>Beneficios</Text>
+          {features.map((feature, index) => (
+            <View key={index} style={styles.featureCard}>
+              <View style={styles.featureIcon}>{feature.icon}</View>
+              <View style={styles.featureContent}>
+                <Text style={styles.featureTitle}>{feature.title}</Text>
+                <Text style={styles.featureDescription}>{feature.description}</Text>
               </View>
             </View>
           ))}
         </View>
 
-        <View style={styles.infoSection}>
-          <Text style={styles.infoTitle}>¿Cómo funciona?</Text>
+        <View style={styles.stepsSection}>
+          <Text style={styles.sectionTitle}>¿Cómo funciona?</Text>
           <View style={styles.stepsList}>
-            <View style={styles.stepItem}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>1</Text>
+            {steps.map((step, index) => (
+              <View key={index} style={styles.stepItem}>
+                <View style={styles.stepNumber}>
+                  <Text style={styles.stepNumberText}>{index + 1}</Text>
+                </View>
+                <Text style={styles.stepText}>{step}</Text>
               </View>
-              <Text style={styles.stepText}>Crea o conecta tu cuenta de Stripe</Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>2</Text>
-              </View>
-              <Text style={styles.stepText}>Verifica tu identidad y datos bancarios</Text>
-            </View>
-            <View style={styles.stepItem}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>3</Text>
-              </View>
-              <Text style={styles.stepText}>Recibe pagos automáticos por cada venta</Text>
-            </View>
+            ))}
           </View>
         </View>
 
-        <View style={styles.feeInfo}>
-          <Text style={styles.feeTitle}>Comisiones</Text>
-          <Text style={styles.feeText}>
-            La plataforma retiene un <Text style={styles.feeHighlight}>5%</Text> de cada venta. 
-            El resto se transfiere directamente a tu cuenta de Stripe.
-          </Text>
+        <View style={styles.infoBox}>
+          <Info color={Colors.dark.primary} size={20} />
+          <View style={styles.infoContent}>
+            <Text style={styles.infoTitle}>Comisión de la plataforma</Text>
+            <Text style={styles.infoText}>
+              La plataforma retiene un pequeño porcentaje de cada venta para cubrir costes de procesamiento y mantenimiento. El resto es tuyo.
+            </Text>
+          </View>
         </View>
 
         <View style={{ height: 120 }} />
@@ -202,24 +103,19 @@ export default function ConnectStripeScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.connectButton}
-          onPress={handleConnectStripe}
-          disabled={isConnecting}
+          style={styles.button}
+          onPress={() => router.push('/promoter/payouts')}
         >
           <LinearGradient
-            colors={['#635BFF', '#A259FF']}
+            colors={Colors.dark.gradient.primary as [string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
-            style={styles.connectButtonGradient}
+            style={styles.buttonGradient}
           >
-            <CreditCard color="#FFF" size={22} />
-            <Text style={styles.connectButtonText}>Conectar con Stripe</Text>
-            <ExternalLink color="#FFF" size={18} />
+            <Text style={styles.buttonText}>Ver mis pagos</Text>
+            <ArrowRight color="#FFF" size={20} />
           </LinearGradient>
         </TouchableOpacity>
-        <Text style={styles.footerText}>
-          Serás redirigido a Stripe para completar el proceso
-        </Text>
       </View>
     </SafeAreaView>
   );
@@ -246,7 +142,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: '800' as const,
     color: Colors.dark.text,
     textAlign: 'center',
     marginBottom: 12,
@@ -257,17 +153,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  benefitsSection: {
+  featuresSection: {
     paddingHorizontal: 20,
     marginBottom: 30,
   },
-  benefitsTitle: {
+  sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
     marginBottom: 16,
   },
-  benefitCard: {
+  featureCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.dark.card,
@@ -276,7 +172,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 14,
   },
-  benefitIcon: {
+  featureIcon: {
     width: 48,
     height: 48,
     borderRadius: 14,
@@ -284,28 +180,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  benefitContent: {
+  featureContent: {
     flex: 1,
   },
-  benefitTitle: {
+  featureTitle: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: Colors.dark.text,
     marginBottom: 4,
   },
-  benefitDescription: {
+  featureDescription: {
     fontSize: 13,
     color: Colors.dark.textSecondary,
   },
-  infoSection: {
+  stepsSection: {
     paddingHorizontal: 20,
     marginBottom: 30,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.dark.text,
-    marginBottom: 16,
   },
   stepsList: {
     gap: 12,
@@ -325,7 +215,7 @@ const styles = StyleSheet.create({
   },
   stepNumberText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '800' as const,
     color: Colors.dark.primary,
   },
   stepText: {
@@ -333,26 +223,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.dark.textSecondary,
   },
-  feeInfo: {
+  infoBox: {
+    flexDirection: 'row',
     marginHorizontal: 20,
-    backgroundColor: Colors.dark.card,
+    backgroundColor: Colors.dark.primary + '15',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
+    gap: 12,
   },
-  feeTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.dark.text,
-    marginBottom: 8,
+  infoContent: {
+    flex: 1,
   },
-  feeText: {
+  infoTitle: {
     fontSize: 14,
-    color: Colors.dark.textSecondary,
-    lineHeight: 20,
-  },
-  feeHighlight: {
+    fontWeight: '700' as const,
     color: Colors.dark.primary,
-    fontWeight: '700',
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    lineHeight: 18,
   },
   footer: {
     position: 'absolute',
@@ -365,81 +256,20 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 36,
   },
-  connectButton: {
+  button: {
     borderRadius: 16,
     overflow: 'hidden',
   },
-  connectButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    gap: 12,
-  },
-  connectButtonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  footerText: {
-    fontSize: 12,
-    color: Colors.dark.textMuted,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  connectingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  connectingTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.dark.text,
-    marginTop: 8,
-  },
-  connectingText: {
-    fontSize: 14,
-    color: Colors.dark.textSecondary,
-  },
-  successContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
-  },
-  successIconContainer: {
-    marginBottom: 24,
-  },
-  successTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: Colors.dark.text,
-    marginBottom: 12,
-  },
-  successText: {
-    fontSize: 15,
-    color: Colors.dark.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
-  },
-  successButton: {
-    width: '100%',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  successButtonGradient: {
+  buttonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
     gap: 10,
   },
-  successButtonText: {
+  buttonText: {
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     color: '#FFF',
   },
 });

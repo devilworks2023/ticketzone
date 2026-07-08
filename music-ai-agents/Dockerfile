@@ -22,7 +22,9 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-RUN apk add --no-cache curl
+# ffmpeg permite decodificar AIFF, FLAC, M4A/AAC, OGG, OPUS, WMA, etc. además de
+# WAV/MP3. Sin él, el backend solo admite WAV y MP3 (vía librerías JS puras).
+RUN apk add --no-cache curl ffmpeg
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json

@@ -1,5 +1,6 @@
 import wavDecoder from 'wav-decoder';
 import { MPEGDecoder } from 'mpg123-decoder';
+import { isFfmpegAvailable, decodeViaFfmpeg } from './ffmpeg';
 
 export interface DecodedAudio {
   sampleRate: number;
@@ -7,10 +8,20 @@ export interface DecodedAudio {
   durationSec: number;
 }
 
+// Formatos que sabemos decodificar sin ffmpeg, con librerías JS puras.
+const JS_NATIVE_EXTS = new Set(['wav', 'mp3', 'mpeg', 'mpga']);
+
 function looksLikeWav(bytes: Uint8Array): boolean {
   return bytes.length > 12 &&
     bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && // RIFF
     bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45; // WAVE
+}
+
+function looksLikeMp3(bytes: Uint8Array): boolean {
+  // ID3 tag ("ID3") o frame sync MPEG (0xFF 0xEx/0xFx).
+  if (bytes.length < 3) return false;
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return true;
+  return bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0;
 }
 
 function downmix(channelData: Float32Array[]): Float32Array {
@@ -56,21 +67,53 @@ async function decodeMp3(buffer: Buffer): Promise<DecodedAudio> {
   }
 }
 
-export async function decodeAudioBuffer(buffer: Buffer, fileName?: string): Promise<DecodedAudio> {
-  const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(buffer.byteLength, 16));
-  const ext = fileName?.split('.').pop()?.toLowerCase();
-
+/** Intenta las librerías JS puras (sin ffmpeg) para WAV y MP3. */
+async function decodeWithJsLibs(buffer: Buffer, bytes: Uint8Array, ext?: string): Promise<DecodedAudio | null> {
   if (looksLikeWav(bytes) || ext === 'wav') {
     return decodeWav(buffer);
   }
-
-  try {
-    return await decodeMp3(buffer);
-  } catch (err) {
-    throw new Error(
-      `No se pudo decodificar el archivo de audio. Formatos soportados: WAV y MP3. Detalle: ${(err as Error).message}`,
-    );
+  if (looksLikeMp3(bytes) || ext === 'mp3' || ext === 'mpeg' || ext === 'mpga') {
+    return decodeMp3(buffer);
   }
+  return null;
+}
+
+/**
+ * Decodifica el audio a PCM mono float32. Estrategia:
+ *  1. Si es WAV/MP3 y NO hay ffmpeg → librerías JS puras (funciona sin dependencias del sistema).
+ *  2. En cualquier otro caso → ffmpeg (AIFF, FLAC, M4A/AAC, OGG, WMA, OPUS, etc.), si está disponible.
+ *  3. Último recurso → intentar las librerías JS de todos modos.
+ */
+export async function decodeAudioBuffer(buffer: Buffer, fileName?: string): Promise<DecodedAudio> {
+  const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, Math.min(buffer.byteLength, 16));
+  const ext = fileName?.split('.').pop()?.toLowerCase();
+  const hasFfmpeg = await isFfmpegAvailable();
+
+  // Para WAV/MP3 sin ffmpeg, usamos las librerías JS directamente.
+  if (!hasFfmpeg && (JS_NATIVE_EXTS.has(ext ?? '') || looksLikeWav(bytes) || looksLikeMp3(bytes))) {
+    const jsResult = await decodeWithJsLibs(buffer, bytes, ext);
+    if (jsResult) return jsResult;
+  }
+
+  if (hasFfmpeg) {
+    try {
+      return await decodeViaFfmpeg(buffer);
+    } catch (err) {
+      // Si ffmpeg falla pero es un formato que las libs JS entienden, probamos con ellas.
+      const jsResult = await decodeWithJsLibs(buffer, bytes, ext).catch(() => null);
+      if (jsResult) return jsResult;
+      throw new Error(`No se pudo decodificar el archivo de audio. Detalle: ${(err as Error).message}`);
+    }
+  }
+
+  // Sin ffmpeg y formato no nativo.
+  const jsResult = await decodeWithJsLibs(buffer, bytes, ext).catch(() => null);
+  if (jsResult) return jsResult;
+
+  throw new Error(
+    'No se pudo decodificar el archivo. Sin ffmpeg en el servidor solo se admiten WAV y MP3; ' +
+      'para AIFF, FLAC, M4A, OGG y otros formatos, el servidor necesita ffmpeg instalado.',
+  );
 }
 
 export function downsample(mono: Float32Array, fromRate: number, toRate: number): { data: Float32Array; sampleRate: number } {

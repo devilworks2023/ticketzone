@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { Download, Music2, Gauge, KeyRound } from 'lucide-react-native';
+import { Download, Music2, Gauge, KeyRound, Layers, Drum } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { shareMidiBase64 } from '@/lib/share';
@@ -31,6 +31,14 @@ export default function AnalyzerResultScreen() {
       await shareMidiBase64(analysis.midiBase64, `patron_${analysis.id}.mid`);
     } catch {
       Alert.alert('Error', 'No se pudo exportar el archivo MIDI.');
+    }
+  };
+
+  const handleStemDownload = async (stem: string, midiBase64: string) => {
+    try {
+      await shareMidiBase64(midiBase64, `${stem}_${analysis.id}.mid`);
+    } catch {
+      Alert.alert('Error', 'No se pudo exportar el MIDI de este instrumento.');
     }
   };
 
@@ -69,8 +77,63 @@ export default function AnalyzerResultScreen() {
 
       <TouchableOpacity style={styles.downloadButton} onPress={handleDownload} testID="download-midi-btn">
         <Download color="#fff" size={18} />
-        <Text style={styles.downloadButtonText}>Exportar / compartir patrón MIDI</Text>
+        <Text style={styles.downloadButtonText}>MIDI de la mezcla completa</Text>
       </TouchableOpacity>
+
+      <View style={styles.stemsHeaderRow}>
+        <Layers color={Colors.dark.accent} size={18} />
+        <Text style={styles.sectionTitle}>Instrumentos separados (IA)</Text>
+      </View>
+
+      {analysis.separated ? (
+        <>
+          <Text style={styles.stemsHint}>
+            Separación real por IA (Demucs). Cada instrumento tiene su propio MIDI descargable.
+          </Text>
+          <View style={styles.stemList}>
+            {analysis.stems.map((stem) => {
+              const count = stem.kind === 'drums' ? stem.drumHits.length : stem.noteEvents.length;
+              const empty = count === 0;
+              return (
+                <View key={stem.stem} style={styles.stemCard}>
+                  <View style={styles.stemInfo}>
+                    <View style={styles.stemTitleRow}>
+                      {stem.kind === 'drums' ? (
+                        <Drum color={Colors.dark.primary} size={16} />
+                      ) : (
+                        <Music2 color={Colors.dark.primary} size={16} />
+                      )}
+                      <Text style={styles.stemLabel}>{stem.label}</Text>
+                    </View>
+                    <Text style={styles.stemMeta}>
+                      presencia {Math.round(stem.presence * 100)}% ·{' '}
+                      {empty
+                        ? 'no detectado en la pista'
+                        : stem.kind === 'drums'
+                          ? `${count} golpes`
+                          : `${count} notas`}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.stemDownloadBtn, empty && styles.stemDownloadBtnDisabled]}
+                    onPress={() => handleStemDownload(stem.stem, stem.midiBase64)}
+                    disabled={empty}
+                    testID={`download-stem-${stem.stem}`}
+                  >
+                    <Download color={empty ? Colors.dark.textMuted : Colors.dark.accent} size={16} />
+                    <Text style={[styles.stemDownloadText, empty && { color: Colors.dark.textMuted }]}>MIDI</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      ) : (
+        <Text style={styles.stemsHint}>
+          {analysis.separationNote ??
+            'La separación por instrumento no está disponible para este análisis.'}
+        </Text>
+      )}
 
       <Text style={styles.sectionTitle}>Cómo construir un track con este patrón</Text>
       <View style={styles.tutorialBox}>
@@ -98,6 +161,24 @@ const styles = StyleSheet.create({
   instrumentPct: { color: Colors.dark.text, fontSize: 12, width: 36, textAlign: 'right' },
   downloadButton: { flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.dark.primary, borderRadius: 12, paddingVertical: 14 },
   downloadButtonText: { color: '#fff', fontWeight: '700' },
+  stemsHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stemsHint: { color: Colors.dark.textMuted, fontSize: 12, lineHeight: 17, marginTop: -8 },
+  stemList: { gap: 10 },
+  stemCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: Colors.dark.surface, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  stemInfo: { flex: 1, gap: 4 },
+  stemTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stemLabel: { color: Colors.dark.text, fontWeight: '600', fontSize: 14 },
+  stemMeta: { color: Colors.dark.textMuted, fontSize: 11 },
+  stemDownloadBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.dark.surfaceAlt, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
+  },
+  stemDownloadBtnDisabled: { opacity: 0.5 },
+  stemDownloadText: { color: Colors.dark.accent, fontSize: 12, fontWeight: '700' },
   tutorialBox: { backgroundColor: Colors.dark.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: Colors.dark.border },
   tutorialText: { color: Colors.dark.text, fontSize: 13, lineHeight: 20 },
 });

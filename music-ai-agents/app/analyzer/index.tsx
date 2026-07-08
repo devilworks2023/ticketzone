@@ -73,8 +73,8 @@ export default function AnalyzerScreen() {
       {mode === 'upload' ? (
         <View style={styles.panel}>
           <Text style={styles.panelHint}>
-            Analizamos el audio real (tempo, tonalidad, instrumentación e ideas melódicas) para
-            generar un patrón MIDI fiel a la pista. Formatos soportados: WAV y MP3.
+            Analizamos el audio real (tempo, tonalidad, ideas melódicas) y lo separamos por
+            instrumento con IA (Demucs) para darte un MIDI por instrumento. Formatos: WAV y MP3.
           </Text>
           <TouchableOpacity style={styles.pickButton} onPress={pickFile} testID="pick-file-btn">
             <UploadCloud color={Colors.dark.primary} size={22} />

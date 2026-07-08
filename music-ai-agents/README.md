@@ -3,55 +3,90 @@
 Aplicación independiente (Expo + tRPC/Hono) con dos agentes de IA para productores/DJs:
 
 1. **Agente Analizador** — sube un archivo de audio (WAV/MP3) o pega el enlace de un track y
-   obtén tempo (BPM), tonalidad (con código Camelot), una estimación heurística de
-   instrumentación, y un **patrón MIDI real** (bajo/melodía + batería) exportable/compartible,
-   junto con una guía de texto sobre cómo reconstruir un track con ese patrón.
+   obtén tempo (BPM), tonalidad (con código Camelot), instrumentación, y un **patrón MIDI real**
+   exportable/compartible, junto con una guía de texto sobre cómo reconstruir un track. Al subir
+   audio, además **separa los instrumentos con IA (Demucs)** y devuelve un **MIDI por instrumento**
+   (batería, bajo, voz, guitarra, piano, otros).
 2. **Agente de Recomendaciones** — pega el enlace de un track y descubre artistas y canciones
    afines, con enlaces de búsqueda directos en Beatport, Bandcamp, Juno y Spotify.
 
-## Cómo correrlo
+## Arquitectura (dos servicios)
+
+- **web** — frontend Expo Web + backend tRPC/Hono (mismo proceso en producción). `Dockerfile` raíz.
+- **separation** — servicio Python con **Demucs** (`htdemucs_6s`) que separa el audio en stems por
+  instrumento. Vive en `separation-service/`. El backend lo descubre por `SEPARATION_SERVICE_URL`.
+  Si este servicio está caído, el analizador **degrada con gracia** al análisis de la mezcla completa
+  (sin stems), marcándolo en la respuesta (`separated: false`).
+
+## Cómo correrlo en local
+
+Opción rápida con Docker (ambos servicios):
+
+```bash
+docker compose up --build
+# web:        http://localhost:3002
+# separation: interno (http://separation:8000)
+```
+
+O a mano, en tres terminales:
 
 ```bash
 npm install
-npm run backend   # levanta el backend tRPC/Hono en http://localhost:3002
-npm run start     # levanta la app Expo (otra terminal)
+npm run backend   # backend tRPC/Hono en http://localhost:3002
+npm run start     # app Expo web
+
+# servicio de separación (Python):
+cd separation-service && pip install -r requirements.txt
+uvicorn app:app --port 8000
+# y arranca el backend con SEPARATION_SERVICE_URL=http://localhost:8000
 ```
 
-Variable opcional `EXPO_PUBLIC_MUSICLAB_API_BASE_URL` para apuntar el cliente a otra URL del backend.
+Variables:
+- `EXPO_PUBLIC_MUSICLAB_API_BASE_URL` — URL del backend para el cliente.
+- `SEPARATION_SERVICE_URL` — URL del servicio de separación (default `http://localhost:8000`).
+- `SEPARATION_TIMEOUT_MS` — timeout de la separación (default 180000).
 
 ## Publicar en la web (Railway / Render)
 
-La app se publica como **un solo servicio Docker**: el `Dockerfile` en la raíz exporta el
-frontend Expo Web (`expo export -p web`) y lo sirve desde el mismo proceso Hono que expone la
-API en `/api/trpc` — un único puerto, sin necesidad de nginx ni de dos servicios separados.
-Ya se probó localmente (build + arranque + smoke test de `/`, rutas cliente y `/api`).
+Son **dos servicios** desplegables por separado desde este mismo repo:
 
-La base de datos es SQLite en disco (`/app/data/musiclab.db`), así que el host necesita
-**volumen persistente** (no sirve un plan 100% serverless/stateless).
+1. **web** (`Dockerfile` raíz): exporta el frontend Expo Web y lo sirve desde el mismo proceso
+   Hono que expone la API en `/api/trpc` — un único puerto. La base de datos es SQLite en disco
+   (`/app/data/musiclab.db`), así que necesita **volumen/disco persistente**.
+2. **separation** (`separation-service/Dockerfile`): el servicio Demucs. Es una imagen grande
+   (torch + modelo) y consume CPU/RAM (**recomendado ≥ 2 GB RAM**); la separación de un fragmento
+   tarda unos segundos en CPU. No necesita disco persistente.
+
+El servicio **web** se conecta al de **separation** por la variable `SEPARATION_SERVICE_URL`.
+
+> Nota: el servicio de separación es **opcional**. Si no lo despliegas (o lo apagas para ahorrar
+> coste), el analizador sigue funcionando y solo omite la separación por instrumento
+> (`separated: false`), mostrando el análisis de la mezcla completa.
 
 ### Railway
 
-1. New Project → Deploy from GitHub repo → selecciona este repo.
-2. En **Settings → Root Directory** pon `music-ai-agents`. Railway detecta el `Dockerfile` solo.
-3. **Settings → Volumes** → añade un volumen montado en `/app/data` (para que la base de datos
-   sobreviva a los redeploys).
-4. Railway asigna `PORT` automáticamente; el backend ya lo respeta. No hace falta configurar
-   nada más salvo que quieras fijar `EXPO_PUBLIC_MUSICLAB_API_BASE_URL` (no es necesario en este
-   modelo de "un solo servicio": el frontend llama al mismo origen).
-5. Deploy. Railway te da la URL pública (`*.up.railway.app`), o puedes conectar un dominio propio.
+1. New Project → Deploy from GitHub repo → selecciona este repo (dos veces, un servicio por deploy).
+2. **Servicio web**: **Settings → Root Directory** = `music-ai-agents`. Añade un **Volume** en
+   `/app/data`. Railway asigna `PORT` solo.
+3. **Servicio separation**: **Root Directory** = `music-ai-agents/separation-service`. Sin volumen.
+   Dale una instancia con memoria suficiente (≥ 2 GB).
+4. En el servicio **web**, añade la variable `SEPARATION_SERVICE_URL` apuntando a la URL interna
+   del servicio de separación (Railway permite referenciar servicios entre sí en el mismo proyecto).
+5. Deploy. Railway te da la URL pública del servicio web (`*.up.railway.app`) o tu dominio propio.
 
 ### Render
 
-1. New → Web Service → conecta el repo.
-2. **Root Directory**: `music-ai-agents`. **Runtime**: Docker (detecta el `Dockerfile`).
-3. **Disks** → añade un disco persistente montado en `/app/data`.
-4. Render inyecta `PORT` automáticamente. Deploy.
+1. **Web Service** #1: Root Directory `music-ai-agents`, runtime Docker, añade un **Disk** en
+   `/app/data`.
+2. **Web Service** #2: Root Directory `music-ai-agents/separation-service`, runtime Docker,
+   instancia con ≥ 2 GB RAM.
+3. En el servicio #1 añade `SEPARATION_SERVICE_URL` con la URL interna del #2.
 
 ### Notas
 
-- El healthcheck del contenedor pega a `/health`.
-- Si más adelante quieres reducir el tamaño de imagen, se puede separar `node_modules` de
-  producción de los de build, pero para el tamaño actual del proyecto no hace falta.
+- Healthchecks: `/health` en ambos servicios.
+- Si quieres el despliegue **más barato**: publica solo el servicio **web** y omite el de
+  separación; la app funciona igual sin la función de separación por instrumento.
 - Publicar en tiendas móviles (App Store / Play Store) es un paso aparte: requiere cuentas de
   desarrollador propias y build con `eas build`/`eas submit` — no está configurado todavía.
 
@@ -66,12 +101,18 @@ límites técnicos y de plataforma que conviene conocer:
   Krumhansl-Schmuckler sobre un vector de croma, seguimiento de altura (pitch) por picos
   espectrales con interpolación parabólica, y detección de onsets para percusión. El MIDI
   generado (`midi-writer-js`) proviene directamente de esas notas/onsets detectados.
-- **Instrumentación:** es una **estimación heurística** por energía espectral en bandas y
-  densidad de onsets (bajo / batería / melodía / armonía), no una clasificación con un modelo
-  entrenado de separación de instrumentos. Se documenta así en la propia respuesta.
-- **Transcripción:** se limita a una ventana corta (hasta ~8 compases / 32s) desde el inicio del
+- **Separación de instrumentos: IA real.** Al subir audio, el servicio `separation` usa **Demucs**
+  (`htdemucs_6s`, modelo entrenado de deep learning) para separar la pista en 6 stems reales:
+  batería, bajo, voz, guitarra, piano y "otros". Cada stem se transcribe a su propio MIDI. Un stem
+  cuya energía es mínima frente al más fuerte se considera "no presente" y no se transcribe (evita
+  notas espurias del sangrado de la separación). La barra de "instrumentación estimada" que se
+  muestra aparte sigue siendo una heurística rápida por bandas; la separación real es la sección
+  "Instrumentos separados (IA)".
+- **Transcripción:** se limita a una ventana corta (hasta ~8 compases / ~32-40s) desde el inicio del
   audio: el objetivo es un *patrón* aprendible, no transcribir la canción completa. También es
-  principalmente monofónica (mejor para líneas de bajo/lead que para acordes polifónicos densos).
+  principalmente monofónica por stem (mejor para líneas de bajo/lead que para acordes polifónicos
+  densos). La separación reduce mucho el solapamiento, pero la conversión audio→MIDI por stem sigue
+  siendo aproximada, no una partitura exacta.
 - **Enlaces a Beatport / Bandcamp / Juno / Spotify / SoundCloud: no hay forma de descargar el
   audio real** de esas plataformas (no exponen esa API para terceros). Para esos casos:
   - Bandcamp, SoundCloud y Spotify sí tienen **oEmbed público** (título/artista/miniatura) y se

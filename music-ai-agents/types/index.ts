@@ -28,6 +28,18 @@ export interface KeyResult {
   confidence: number;
 }
 
+export type StemName = 'drums' | 'bass' | 'vocals' | 'guitar' | 'piano' | 'other';
+
+export interface StemResult {
+  stem: StemName;
+  label: string;
+  kind: 'drums' | 'melodic';
+  presence: number;
+  noteEvents: NoteEvent[];
+  drumHits: DrumHit[];
+  midiBase64: string;
+}
+
 export interface AnalysisResult {
   id: string;
   source: 'upload' | 'link';
@@ -43,6 +55,11 @@ export interface AnalysisResult {
   midiBase64: string;
   tutorial: string;
   createdAt: string;
+  // Separación real por IA (Demucs). Presente solo cuando el servicio de
+  // separación estuvo disponible y produjo stems por instrumento.
+  separated: boolean;
+  separationNote?: string;
+  stems: StemResult[];
 }
 
 export type LookupPlatform =

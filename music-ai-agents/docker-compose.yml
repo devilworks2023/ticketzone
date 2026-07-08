@@ -1,0 +1,41 @@
+# MusicLab AI — dos servicios:
+#   web       → frontend Expo Web + backend tRPC/Hono (Dockerfile raíz)
+#   separation→ servicio Demucs de separación por instrumento (separation-service/)
+#
+# `docker compose up --build` levanta ambos. El backend descubre el servicio de
+# separación por la variable SEPARATION_SERVICE_URL. Si el servicio de separación
+# está caído, el backend degrada con gracia al análisis de mezcla completa.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - DATABASE_PATH=/app/data/musiclab.db
+      - SEPARATION_SERVICE_URL=http://separation:8000
+      - SEPARATION_TIMEOUT_MS=180000
+    volumes:
+      - musiclab-data:/app/data
+    depends_on:
+      - separation
+
+  separation:
+    build:
+      context: ./separation-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Demucs es intensivo en CPU/RAM. Reserva memoria suficiente (>= 2 GB).
+    environment:
+      - DEMUCS_MODEL=htdemucs_6s
+    expose:
+      - "8000"
+
+volumes:
+  musiclab-data:
+    driver: local

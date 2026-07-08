@@ -100,6 +100,11 @@ export const tracksRouter = createTRPCRouter({
         noteEvents,
         drumHits,
         midiBase64,
+        separated: false,
+        separationNote:
+          'La separación real por instrumento solo está disponible al subir un archivo de audio; ' +
+          'desde un enlace no tenemos acceso al audio para separarlo.',
+        stems: [],
       };
 
       const tutorial =

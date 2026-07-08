@@ -17,3 +17,6 @@ npm-debug.*
 *.mobileprovision
 *.orig.*
 expo-env.d.ts
+__pycache__/
+*.pyc
+separation-service/.venv/

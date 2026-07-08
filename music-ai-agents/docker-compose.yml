@@ -1,10 +1,10 @@
 # MusicLab AI — dos servicios:
-#   web       → frontend Expo Web + backend tRPC/Hono (Dockerfile raíz)
-#   separation→ servicio Demucs de separación por instrumento (separation-service/)
+#   web          → frontend Expo Web + backend tRPC/Hono (Dockerfile raíz)
+#   transcription→ servicio MT3 de transcripción multi-instrumento (transcription-service/)
 #
 # `docker compose up --build` levanta ambos. El backend descubre el servicio de
-# separación por la variable SEPARATION_SERVICE_URL. Si el servicio de separación
-# está caído, el backend degrada con gracia al análisis de mezcla completa.
+# transcripción por TRANSCRIPTION_SERVICE_URL. Si ese servicio está caído, el
+# análisis degrada con gracia (transcribed: false) y la app sigue funcionando.
 
 services:
   web:
@@ -18,21 +18,23 @@ services:
       - NODE_ENV=production
       - PORT=3002
       - DATABASE_PATH=/app/data/musiclab.db
-      - SEPARATION_SERVICE_URL=http://separation:8000
-      - SEPARATION_TIMEOUT_MS=180000
+      - TRANSCRIPTION_SERVICE_URL=http://transcription:8000
+      - TRANSCRIPTION_TIMEOUT_MS=900000
     volumes:
       - musiclab-data:/app/data
     depends_on:
-      - separation
+      - transcription
 
-  separation:
+  transcription:
     build:
-      context: ./separation-service
+      context: ./transcription-service
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Demucs es intensivo en CPU/RAM. Reserva memoria suficiente (>= 2 GB).
+    # MT3 (jax + tensorflow) es intensivo en CPU/RAM. Reserva memoria suficiente
+    # (recomendado >= 3-4 GB RAM).
     environment:
-      - DEMUCS_MODEL=htdemucs_6s
+      - MT3_MODEL_TYPE=mt3
+      - JAX_PLATFORMS=cpu
     expose:
       - "8000"
 

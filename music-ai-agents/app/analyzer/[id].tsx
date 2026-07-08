@@ -77,61 +77,61 @@ export default function AnalyzerResultScreen() {
 
       <TouchableOpacity style={styles.downloadButton} onPress={handleDownload} testID="download-midi-btn">
         <Download color="#fff" size={18} />
-        <Text style={styles.downloadButtonText}>MIDI de la mezcla completa</Text>
+        <Text style={styles.downloadButtonText}>MIDI del patrón (mezcla)</Text>
       </TouchableOpacity>
 
       <View style={styles.stemsHeaderRow}>
         <Layers color={Colors.dark.accent} size={18} />
-        <Text style={styles.sectionTitle}>Instrumentos separados (IA)</Text>
+        <Text style={styles.sectionTitle}>Instrumentos del track (IA)</Text>
       </View>
 
-      {analysis.separated ? (
+      {analysis.transcribed ? (
         <>
           <Text style={styles.stemsHint}>
-            Separación real por IA (Demucs). Cada instrumento tiene su propio MIDI descargable.
+            Transcripción multi-instrumento por IA (MT3) del track completo. Cada instrumento
+            detectado tiene su propio MIDI, y abajo puedes descargar el MIDI completo con todas
+            las pistas.
           </Text>
+          {analysis.fullMidiBase64 && (
+            <TouchableOpacity
+              style={styles.downloadButton}
+              onPress={() => handleStemDownload('track_completo', analysis.fullMidiBase64!)}
+              testID="download-full-midi-btn"
+            >
+              <Download color="#fff" size={18} />
+              <Text style={styles.downloadButtonText}>MIDI completo del track (todas las pistas)</Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.stemList}>
-            {analysis.stems.map((stem) => {
-              const count = stem.kind === 'drums' ? stem.drumHits.length : stem.noteEvents.length;
-              const empty = count === 0;
-              return (
-                <View key={stem.stem} style={styles.stemCard}>
-                  <View style={styles.stemInfo}>
-                    <View style={styles.stemTitleRow}>
-                      {stem.kind === 'drums' ? (
-                        <Drum color={Colors.dark.primary} size={16} />
-                      ) : (
-                        <Music2 color={Colors.dark.primary} size={16} />
-                      )}
-                      <Text style={styles.stemLabel}>{stem.label}</Text>
-                    </View>
-                    <Text style={styles.stemMeta}>
-                      presencia {Math.round(stem.presence * 100)}% ·{' '}
-                      {empty
-                        ? 'no detectado en la pista'
-                        : stem.kind === 'drums'
-                          ? `${count} golpes`
-                          : `${count} notas`}
-                    </Text>
+            {analysis.transcribedInstruments.map((inst, idx) => (
+              <View key={`${inst.program}-${idx}`} style={styles.stemCard}>
+                <View style={styles.stemInfo}>
+                  <View style={styles.stemTitleRow}>
+                    {inst.isDrum ? (
+                      <Drum color={Colors.dark.primary} size={16} />
+                    ) : (
+                      <Music2 color={Colors.dark.primary} size={16} />
+                    )}
+                    <Text style={styles.stemLabel}>{inst.name}</Text>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.stemDownloadBtn, empty && styles.stemDownloadBtnDisabled]}
-                    onPress={() => handleStemDownload(stem.stem, stem.midiBase64)}
-                    disabled={empty}
-                    testID={`download-stem-${stem.stem}`}
-                  >
-                    <Download color={empty ? Colors.dark.textMuted : Colors.dark.accent} size={16} />
-                    <Text style={[styles.stemDownloadText, empty && { color: Colors.dark.textMuted }]}>MIDI</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.stemMeta}>{inst.noteCount} notas</Text>
                 </View>
-              );
-            })}
+                <TouchableOpacity
+                  style={styles.stemDownloadBtn}
+                  onPress={() => handleStemDownload(inst.name.replace(/\s+/g, '_'), inst.midiBase64)}
+                  testID={`download-inst-${idx}`}
+                >
+                  <Download color={Colors.dark.accent} size={16} />
+                  <Text style={styles.stemDownloadText}>MIDI</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         </>
       ) : (
         <Text style={styles.stemsHint}>
-          {analysis.separationNote ??
-            'La separación por instrumento no está disponible para este análisis.'}
+          {analysis.transcriptionNote ??
+            'La transcripción por instrumento no está disponible para este análisis.'}
         </Text>
       )}
 

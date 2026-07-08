@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -14,18 +14,46 @@ export default function AnalyzerScreen() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [link, setLink] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const navigated = useRef(false);
 
-  const analyzeUpload = trpc.tracks.analyzeUpload.useMutation({
-    onSuccess: (result) => router.push(`/analyzer/${result.id}`),
-    onError: (err) => Alert.alert('Error al analizar', err.message),
+  const startAnalysis = trpc.tracks.startAnalysis.useMutation({
+    onSuccess: ({ jobId }) => setJobId(jobId),
+    onError: (err) => {
+      setPreparing(false);
+      Alert.alert('Error al analizar', err.message);
+    },
   });
+
+  // Polling del job asíncrono (la transcripción MT3 del track completo tarda).
+  const jobQuery = trpc.tracks.getJob.useQuery(
+    { jobId: jobId! },
+    { enabled: !!jobId, refetchInterval: 2500 },
+  );
+
+  useEffect(() => {
+    const job = jobQuery.data;
+    if (!job || navigated.current) return;
+    if (job.status === 'done' && job.analysisId) {
+      navigated.current = true;
+      setJobId(null);
+      setPreparing(false);
+      router.push(`/analyzer/${job.analysisId}`);
+    } else if (job.status === 'error') {
+      setJobId(null);
+      setPreparing(false);
+      Alert.alert('Error al analizar', job.error ?? 'La transcripción falló.');
+    }
+  }, [jobQuery.data]);
 
   const analyzeLink = trpc.tracks.analyzeLink.useMutation({
     onSuccess: (result) => router.push(`/analyzer/${result.analysis.id}`),
     onError: (err) => Alert.alert('Error al analizar el enlace', err.message),
   });
 
-  const isLoading = analyzeUpload.isPending || analyzeLink.isPending;
+  const uploadBusy = preparing || startAnalysis.isPending || !!jobId;
+  const isLoading = uploadBusy || analyzeLink.isPending;
 
   const pickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*' });
@@ -36,12 +64,27 @@ export default function AnalyzerScreen() {
 
   const submitUpload = async () => {
     if (!fileUri || !fileName) {
-      Alert.alert('Falta un archivo', 'Selecciona un archivo de audio WAV o MP3.');
+      Alert.alert('Falta un archivo', 'Selecciona un archivo de audio.');
       return;
     }
-    const base64Audio = await readFileAsBase64(fileUri);
-    analyzeUpload.mutate({ base64Audio, fileName });
+    navigated.current = false;
+    setPreparing(true);
+    try {
+      const base64Audio = await readFileAsBase64(fileUri);
+      startAnalysis.mutate({ base64Audio, fileName });
+    } catch {
+      setPreparing(false);
+      Alert.alert('Error', 'No se pudo leer el archivo.');
+    }
   };
+
+  const uploadStatusText = jobId
+    ? jobQuery.data?.stage
+      ? `Procesando: ${jobQuery.data.stage}…`
+      : 'Procesando…'
+    : preparing
+      ? 'Subiendo audio…'
+      : 'Analizar audio';
 
   const submitLink = () => {
     if (!link.trim()) {
@@ -73,11 +116,15 @@ export default function AnalyzerScreen() {
       {mode === 'upload' ? (
         <View style={styles.panel}>
           <Text style={styles.panelHint}>
-            Analizamos el audio real (tempo, tonalidad, ideas melódicas) y lo separamos por
-            instrumento con IA (Demucs) para darte un MIDI por instrumento. Formatos: WAV, MP3,
-            AIFF, FLAC, M4A/AAC, OGG y otros.
+            Analizamos el audio real (tempo, tonalidad) y lo transcribimos con IA (MT3),
+            distinguiendo los instrumentos del track y dándote un MIDI por instrumento y uno
+            del track completo. Formatos: WAV, MP3, AIFF, FLAC, M4A/AAC, OGG y otros.
           </Text>
-          <TouchableOpacity style={styles.pickButton} onPress={pickFile} testID="pick-file-btn">
+          <Text style={styles.panelHint}>
+            La transcripción del track completo puede tardar varios minutos; mantén esta pantalla
+            abierta mientras se procesa.
+          </Text>
+          <TouchableOpacity style={styles.pickButton} onPress={pickFile} disabled={uploadBusy} testID="pick-file-btn">
             <UploadCloud color={Colors.dark.primary} size={22} />
             <Text style={styles.pickButtonText}>{fileName ?? 'Seleccionar archivo de audio'}</Text>
           </TouchableOpacity>
@@ -88,12 +135,19 @@ export default function AnalyzerScreen() {
             </View>
           )}
           <TouchableOpacity
-            style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+            style={[styles.submitButton, uploadBusy && styles.submitButtonDisabled]}
             onPress={submitUpload}
-            disabled={isLoading}
+            disabled={uploadBusy}
             testID="submit-upload-btn"
           >
-            {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitButtonText}>Analizar audio</Text>}
+            {uploadBusy ? (
+              <View style={styles.submitBusy}>
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.submitButtonText}>{uploadStatusText}</Text>
+              </View>
+            ) : (
+              <Text style={styles.submitButtonText}>Analizar audio</Text>
+            )}
           </TouchableOpacity>
         </View>
       ) : (
@@ -156,4 +210,5 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: Colors.dark.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   submitButtonDisabled: { opacity: 0.6 },
   submitButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  submitBusy: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

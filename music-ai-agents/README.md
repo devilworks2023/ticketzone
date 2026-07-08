@@ -19,6 +19,42 @@ npm run start     # levanta la app Expo (otra terminal)
 
 Variable opcional `EXPO_PUBLIC_MUSICLAB_API_BASE_URL` para apuntar el cliente a otra URL del backend.
 
+## Publicar en la web (Railway / Render)
+
+La app se publica como **un solo servicio Docker**: el `Dockerfile` en la raíz exporta el
+frontend Expo Web (`expo export -p web`) y lo sirve desde el mismo proceso Hono que expone la
+API en `/api/trpc` — un único puerto, sin necesidad de nginx ni de dos servicios separados.
+Ya se probó localmente (build + arranque + smoke test de `/`, rutas cliente y `/api`).
+
+La base de datos es SQLite en disco (`/app/data/musiclab.db`), así que el host necesita
+**volumen persistente** (no sirve un plan 100% serverless/stateless).
+
+### Railway
+
+1. New Project → Deploy from GitHub repo → selecciona este repo.
+2. En **Settings → Root Directory** pon `music-ai-agents`. Railway detecta el `Dockerfile` solo.
+3. **Settings → Volumes** → añade un volumen montado en `/app/data` (para que la base de datos
+   sobreviva a los redeploys).
+4. Railway asigna `PORT` automáticamente; el backend ya lo respeta. No hace falta configurar
+   nada más salvo que quieras fijar `EXPO_PUBLIC_MUSICLAB_API_BASE_URL` (no es necesario en este
+   modelo de "un solo servicio": el frontend llama al mismo origen).
+5. Deploy. Railway te da la URL pública (`*.up.railway.app`), o puedes conectar un dominio propio.
+
+### Render
+
+1. New → Web Service → conecta el repo.
+2. **Root Directory**: `music-ai-agents`. **Runtime**: Docker (detecta el `Dockerfile`).
+3. **Disks** → añade un disco persistente montado en `/app/data`.
+4. Render inyecta `PORT` automáticamente. Deploy.
+
+### Notas
+
+- El healthcheck del contenedor pega a `/health`.
+- Si más adelante quieres reducir el tamaño de imagen, se puede separar `node_modules` de
+  producción de los de build, pero para el tamaño actual del proyecto no hace falta.
+- Publicar en tiendas móviles (App Store / Play Store) es un paso aparte: requiere cuentas de
+  desarrollador propias y build con `eas build`/`eas submit` — no está configurado todavía.
+
 ## Qué es real y qué es heurístico/orientativo (léase antes de usar)
 
 Este proyecto prioriza hacer trabajo de señal real en vez de simular resultados. Aun así, hay

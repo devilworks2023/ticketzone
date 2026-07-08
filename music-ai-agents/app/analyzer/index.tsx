@@ -28,7 +28,7 @@ export default function AnalyzerScreen() {
   const isLoading = analyzeUpload.isPending || analyzeLink.isPending;
 
   const pickFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['audio/wav', 'audio/mpeg', 'audio/mp3', 'audio/x-wav'] });
+    const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*' });
     if (result.canceled || !result.assets?.[0]) return;
     setFileName(result.assets[0].name);
     setFileUri(result.assets[0].uri);
@@ -74,7 +74,8 @@ export default function AnalyzerScreen() {
         <View style={styles.panel}>
           <Text style={styles.panelHint}>
             Analizamos el audio real (tempo, tonalidad, ideas melódicas) y lo separamos por
-            instrumento con IA (Demucs) para darte un MIDI por instrumento. Formatos: WAV y MP3.
+            instrumento con IA (Demucs) para darte un MIDI por instrumento. Formatos: WAV, MP3,
+            AIFF, FLAC, M4A/AAC, OGG y otros.
           </Text>
           <TouchableOpacity style={styles.pickButton} onPress={pickFile} testID="pick-file-btn">
             <UploadCloud color={Colors.dark.primary} size={22} />

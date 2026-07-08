@@ -95,12 +95,15 @@ El servicio **web** se conecta al de **separation** por la variable `SEPARATION_
 Este proyecto prioriza hacer trabajo de señal real en vez de simular resultados. Aun así, hay
 límites técnicos y de plataforma que conviene conocer:
 
-- **Análisis de audio subido (WAV/MP3): real.** Se decodifica el audio (WAV vía `wav-decoder`,
-  MP3 vía el decodificador WASM `mpg123-decoder`), y se procesa con DSP propio: FFT, detección de
-  tempo por autocorrelación del flujo espectral, detección de tonalidad con perfiles de
-  Krumhansl-Schmuckler sobre un vector de croma, seguimiento de altura (pitch) por picos
-  espectrales con interpolación parabólica, y detección de onsets para percusión. El MIDI
+- **Análisis de audio subido: real.** Formatos: WAV y MP3 se decodifican con librerías JS puras
+  (`wav-decoder`, `mpg123-decoder`); **AIFF, FLAC, M4A/AAC, OGG, OPUS, WMA y otros** vía **ffmpeg**
+  (si está instalado en el servidor — lo está en la imagen Docker). Luego se procesa con DSP propio:
+  FFT, detección de tempo por autocorrelación del flujo espectral, detección de tonalidad con
+  perfiles de Krumhansl-Schmuckler sobre un vector de croma, seguimiento de altura (pitch) por
+  picos espectrales con interpolación parabólica, y detección de onsets para percusión. El MIDI
   generado (`midi-writer-js`) proviene directamente de esas notas/onsets detectados.
+  > Sin ffmpeg en el servidor, el backend sigue admitiendo WAV y MP3; el resto de formatos requieren
+  > ffmpeg (`apt-get install ffmpeg` o equivalente).
 - **Separación de instrumentos: IA real.** Al subir audio, el servicio `separation` usa **Demucs**
   (`htdemucs_6s`, modelo entrenado de deep learning) para separar la pista en 6 stems reales:
   batería, bajo, voz, guitarra, piano y "otros". Cada stem se transcribe a su propio MIDI. Un stem

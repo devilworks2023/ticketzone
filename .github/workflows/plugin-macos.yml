@@ -1,0 +1,42 @@
+name: Build MusicLab AI plugin (macOS)
+
+# Compila el plugin (VST3 + AU) en un runner macOS y sube los binarios como
+# artefactos descargables. Así se obtiene el binario de Mac sin necesidad de
+# tener un Mac localmente.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "music-ai-agents/plugin/**"
+      - ".github/workflows/plugin-macos.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: music-ai-agents/plugin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal arm64 + x86_64)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --config Release -j 3
+
+      - name: Collect artefacts
+        run: |
+          mkdir -p out
+          cp -R "build/MusicLabAI_artefacts/Release/VST3/MusicLab AI.vst3" out/ || true
+          cp -R "build/MusicLabAI_artefacts/Release/AU/MusicLab AI.component" out/ || true
+          cp -R "build/MusicLabAI_artefacts/Release/Standalone/MusicLab AI.app" out/ || true
+          ls -R out
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicLabAI-macOS
+          path: music-ai-agents/plugin/out

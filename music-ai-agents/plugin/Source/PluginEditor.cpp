@@ -35,7 +35,7 @@ void InstrumentRow::mouseDrag (const MouseEvent&)
         StringArray files;
         files.add (file.getFullPathName());
         // Arrastre externo: suelta el .mid en la línea de tiempo del DAW.
-        performExternalDragDropOfFiles (files, false, this);
+        DragAndDropContainer::performExternalDragDropOfFiles (files, false, this);
     }
 }
 

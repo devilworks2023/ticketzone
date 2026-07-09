@@ -22,9 +22,37 @@ Como transcribir un track completo con MT3 en CPU tarda **minutos**, el análisi
 **asíncrono**: `startAnalysis` crea un job y devuelve un `jobId`; el cliente hace *polling* de `getJob`
 hasta que termina. El análisis por enlace (sin audio) sigue siendo síncrono.
 
-## Cómo correrlo en local
+## Correr TODO en local en un Mac (sin cloud)
 
-Opción rápida con Docker (ambos servicios):
+La forma más simple: el script `run-local-mac.sh` instala lo necesario (Colima como
+runtime de Docker, vía Homebrew — sin Docker Desktop) y levanta ambos servicios.
+
+```bash
+cd music-ai-agents
+./run-local-mac.sh            # instala, construye y arranca todo
+./run-local-mac.sh logs       # ver logs
+./run-local-mac.sh stop       # parar
+```
+
+Requisitos: [Homebrew](https://brew.sh), ~6 GB de RAM libres (para la VM de Colima)
+y ~5 GB de disco. La **primera** ejecución tarda bastante: construye la imagen de MT3
+(tensorflow/jax + checkpoint de ~172 MB). Cuando termine, la app está en
+`http://localhost:3002` y el plugin VST3 debe apuntar su campo *Backend* ahí.
+
+> **Apple Silicon (M1/M2/M3):** la imagen de MT3 se validó en x86_64. Si el build de MT3
+> falla en arm64 por wheels de tensorflow/jax, recréala en emulación x86_64:
+> ```bash
+> colima delete && colima start --arch x86_64 --cpu 4 --memory 6 && docker compose up -d --build
+> ```
+> (más lento, pero coincide con lo validado).
+
+> **Nota honesta:** la imagen Docker de MT3 no se pudo construir en el entorno de
+> desarrollo (sin daemon Docker), así que su build está **sin verificar**; el stack de MT3
+> es frágil y puede fallar en el primer intento. Si el build falla, comparte el log y se ajusta.
+
+## Cómo correrlo en local (manual)
+
+Opción con Docker directamente (ambos servicios):
 
 ```bash
 docker compose up --build

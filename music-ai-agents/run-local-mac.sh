@@ -28,8 +28,18 @@ COLIMA_DISK="${COLIMA_DISK:-25}"      # GB
 log()  { printf "\033[1;35m[musiclab]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[error]\033[0m %s\n" "$*" >&2; }
 
-cmd_stop() { log "Parando servicios..."; docker compose down; }
-cmd_logs() { docker compose logs -f; }
+# Homebrew instala `docker-compose` (con guion) pero no siempre enlaza el plugin
+# para `docker compose` (con espacio). Usamos el que esté disponible.
+dc() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  else
+    docker-compose "$@"
+  fi
+}
+
+cmd_stop() { log "Parando servicios..."; dc down; }
+cmd_logs() { dc logs -f; }
 
 case "${1:-up}" in
   stop) cmd_stop; exit 0 ;;
@@ -62,7 +72,7 @@ fi
 
 # 4) Construir y levantar
 log "Construyendo y levantando servicios (la primera vez tarda: MT3 es grande)..."
-docker compose up -d --build
+dc up -d --build
 
 # 5) Esperar salud del backend web
 log "Esperando a que el backend web responda en http://localhost:3002 ..."
@@ -77,7 +87,7 @@ done
 # 6) Esperar salud del servicio MT3 (carga el modelo; puede tardar)
 log "Esperando al servicio de transcripción MT3 (carga el modelo, puede tardar 1-2 min)..."
 for _ in $(seq 1 80); do
-  if docker compose exec -T transcription curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+  if dc exec -T transcription curl -sf http://localhost:8000/health >/dev/null 2>&1; then
     log "✓ Servicio MT3 listo."
     break
   fi

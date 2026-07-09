@@ -43,7 +43,8 @@ target_sources(MusicLabAI PRIVATE
 
 target_compile_definitions(MusicLabAI PUBLIC
     JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=1          # HTTP hacia el backend en Linux/macOS
+    JUCE_USE_CURL=1                    # HTTP hacia el backend en Linux
+    JUCE_LOAD_CURL_SYMBOLS_LAZILY=1    # carga libcurl en runtime (evita enlazarla en build)
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )

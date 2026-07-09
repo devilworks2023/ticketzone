@@ -15,8 +15,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 1) Clonar MT3 e instalar su stack (t5x/flax/tensorflow/seqio/note-seq desde git,
 #    igual que el colab oficial). Fijamos jax a la versión validada.
 RUN git clone --depth 1 --branch main https://github.com/magenta/mt3 /mt3
+
+# t5x depende de 'tensorflow-cpu', que NO tiene wheels para arm64 (Apple Silicon).
+# Clonamos t5x, cambiamos esa dependencia por 'tensorflow' (que sí tiene wheel
+# aarch64) y lo instalamos antes que mt3. Además quitamos la referencia por URL a
+# t5x dentro de mt3 para que use el t5x ya instalado (y no reinstale el original).
+# En x86_64 el cambio es inocuo. Esto mantiene el build NATIVO (sin emular x86,
+# que rompería TensorFlow por AVX bajo Rosetta).
+RUN git clone --depth 1 https://github.com/google-research/t5x /t5x \
+    && grep -rlZ 'tensorflow-cpu' /t5x --include='*.txt' --include='setup.py' 2>/dev/null \
+       | xargs -0 -r sed -i 's/tensorflow-cpu/tensorflow/g'
+
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && pip install --no-cache-dir /t5x \
+    && sed -i "s|t5x @ git+https://github.com/google-research/t5x#egg=t5x|t5x|" /mt3/setup.py \
     && pip install --no-cache-dir -e /mt3
 
 # 2) Descargar el checkpoint multi-instrumento (~172 MB) en build para que el

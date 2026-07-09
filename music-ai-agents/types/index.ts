@@ -28,15 +28,14 @@ export interface KeyResult {
   confidence: number;
 }
 
-export type StemName = 'drums' | 'bass' | 'vocals' | 'guitar' | 'piano' | 'other';
-
-export interface StemResult {
-  stem: StemName;
-  label: string;
-  kind: 'drums' | 'melodic';
-  presence: number;
-  noteEvents: NoteEvent[];
-  drumHits: DrumHit[];
+// Instrumento distinguido por la IA de transcripción (MT3), etiquetado por su
+// programa General MIDI (más de 6 categorías posibles). Cada uno trae su propio
+// MIDI del track completo.
+export interface TranscribedInstrument {
+  program: number;
+  name: string;
+  isDrum: boolean;
+  noteCount: number;
   midiBase64: string;
 }
 
@@ -55,11 +54,23 @@ export interface AnalysisResult {
   midiBase64: string;
   tutorial: string;
   createdAt: string;
-  // Separación real por IA (Demucs). Presente solo cuando el servicio de
-  // separación estuvo disponible y produjo stems por instrumento.
-  separated: boolean;
-  separationNote?: string;
-  stems: StemResult[];
+  // Transcripción multi-instrumento por IA (MT3) del track completo. Presente
+  // solo al subir audio y si el servicio de transcripción estuvo disponible.
+  transcribed: boolean;
+  transcriptionNote?: string;
+  fullMidiBase64?: string;
+  transcribedInstruments: TranscribedInstrument[];
+}
+
+export type JobStatus = 'processing' | 'done' | 'error';
+
+export interface AnalysisJob {
+  id: string;
+  status: JobStatus;
+  analysisId?: string;
+  error?: string;
+  stage?: string;
+  createdAt: string;
 }
 
 export type LookupPlatform =

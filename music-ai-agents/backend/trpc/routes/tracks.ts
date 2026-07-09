@@ -46,7 +46,10 @@ function keyFromText(text: string | undefined): KeyResult {
 }
 
 export const tracksRouter = createTRPCRouter({
-  analyzeUpload: publicProcedure
+  // Análisis de audio subido: ASÍNCRONO. La transcripción multi-instrumento del
+  // track completo (MT3) puede tardar minutos, así que se procesa en segundo plano
+  // y el cliente hace polling de `getJob`.
+  startAnalysis: publicProcedure
     .input(z.object({
       base64Audio: z.string().min(1),
       fileName: z.string().min(1),
@@ -57,22 +60,58 @@ export const tracksRouter = createTRPCRouter({
         throw new Error('El archivo de audio está vacío o no se pudo leer.');
       }
 
-      const analysis = await analyzeAudioFile(buffer, input.fileName);
-      const id = newId('an');
-      const result: AnalysisResult = {
-        id,
-        source: 'upload',
-        fileName: input.fileName,
-        ...analysis,
-        createdAt: new Date().toISOString(),
+      const jobId = newId('job');
+      const createdAt = new Date().toISOString();
+      ctx.db.prepare(`
+        INSERT INTO jobs (id, status, stage, created_at) VALUES (?, 'processing', ?, ?)
+      `).run(jobId, 'en cola', createdAt);
+
+      const db = ctx.db;
+      const setStage = (stage: string) => {
+        try { db.prepare('UPDATE jobs SET stage = ? WHERE id = ?').run(stage, jobId); } catch { /* noop */ }
       };
 
-      ctx.db.prepare(`
-        INSERT INTO analyses (id, source, file_name, source_url, payload, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, 'upload', input.fileName, null, JSON.stringify(result), result.createdAt);
+      // Procesamiento en segundo plano (fire-and-forget). El servidor es de una
+      // sola instancia, así que basta con no esperar la promesa.
+      (async () => {
+        try {
+          const analysis = await analyzeAudioFile(buffer, input.fileName, setStage);
+          const id = newId('an');
+          const result: AnalysisResult = {
+            id,
+            source: 'upload',
+            fileName: input.fileName,
+            ...analysis,
+            createdAt: new Date().toISOString(),
+          };
+          db.prepare(`
+            INSERT INTO analyses (id, source, file_name, source_url, payload, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(id, 'upload', input.fileName, null, JSON.stringify(result), result.createdAt);
+          db.prepare("UPDATE jobs SET status = 'done', analysis_id = ?, stage = 'listo' WHERE id = ?").run(id, jobId);
+        } catch (err) {
+          db.prepare("UPDATE jobs SET status = 'error', error = ? WHERE id = ?")
+            .run((err as Error).message || 'Error desconocido', jobId);
+        }
+      })();
 
-      return result;
+      return { jobId };
+    }),
+
+  getJob: publicProcedure
+    .input(z.object({ jobId: z.string() }))
+    .query(({ ctx, input }) => {
+      const row = ctx.db.prepare('SELECT id, status, analysis_id, error, stage, created_at FROM jobs WHERE id = ?')
+        .get(input.jobId) as { id: string; status: string; analysis_id: string | null; error: string | null; stage: string | null; created_at: string } | undefined;
+      if (!row) return null;
+      return {
+        id: row.id,
+        status: row.status as 'processing' | 'done' | 'error',
+        analysisId: row.analysis_id ?? undefined,
+        error: row.error ?? undefined,
+        stage: row.stage ?? undefined,
+        createdAt: row.created_at,
+      };
     }),
 
   analyzeLink: publicProcedure
@@ -100,11 +139,12 @@ export const tracksRouter = createTRPCRouter({
         noteEvents,
         drumHits,
         midiBase64,
-        separated: false,
-        separationNote:
-          'La separación real por instrumento solo está disponible al subir un archivo de audio; ' +
+        transcribed: false,
+        transcriptionNote:
+          'La transcripción multi-instrumento por IA solo está disponible al subir un archivo de audio; ' +
           'desde un enlace no tenemos acceso al audio para separarlo.',
-        stems: [],
+        fullMidiBase64: undefined,
+        transcribedInstruments: [],
       };
 
       const tutorial =

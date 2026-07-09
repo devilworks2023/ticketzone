@@ -1,0 +1,5 @@
+build/
+out/
+*.vst3
+*.component
+*.app

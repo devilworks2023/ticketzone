@@ -40,5 +40,14 @@ function initializeDatabase(db: Database.Database) {
       payload TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      analysis_id TEXT,
+      error TEXT,
+      stage TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }

@@ -28,7 +28,7 @@ COLIMA_DISK="${COLIMA_DISK:-25}"      # GB
 log()  { printf "\033[1;35m[musiclab]\033[0m %s\n" "$*"; }
 err()  { printf "\033[1;31m[error]\033[0m %s\n" "$*" >&2; }
 
-cmd_stop() { log "Parando servicios…"; docker compose down; }
+cmd_stop() { log "Parando servicios..."; docker compose down; }
 cmd_logs() { docker compose logs -f; }
 
 case "${1:-up}" in
@@ -47,25 +47,25 @@ fi
 # 2) Colima + cliente Docker + compose
 for pkg in colima docker docker-compose; do
   if ! brew list "$pkg" >/dev/null 2>&1; then
-    log "Instalando $pkg…"
+    log "Instalando ${pkg}..."
     brew install "$pkg"
   fi
 done
 
 # 3) Arrancar Colima con recursos suficientes
 if ! colima status >/dev/null 2>&1; then
-  log "Iniciando Colima (cpu=$COLIMA_CPU mem=${COLIMA_MEMORY}GB disk=${COLIMA_DISK}GB)…"
+  log "Iniciando Colima (cpu=$COLIMA_CPU mem=${COLIMA_MEMORY}GB disk=${COLIMA_DISK}GB)..."
   colima start --cpu "$COLIMA_CPU" --memory "$COLIMA_MEMORY" --disk "$COLIMA_DISK"
 else
   log "Colima ya está en marcha."
 fi
 
 # 4) Construir y levantar
-log "Construyendo y levantando servicios (la primera vez tarda: MT3 es grande)…"
+log "Construyendo y levantando servicios (la primera vez tarda: MT3 es grande)..."
 docker compose up -d --build
 
 # 5) Esperar salud del backend web
-log "Esperando a que el backend web responda en http://localhost:3002 …"
+log "Esperando a que el backend web responda en http://localhost:3002 ..."
 for _ in $(seq 1 60); do
   if curl -sf http://localhost:3002/health >/dev/null 2>&1; then
     log "✓ Web listo: http://localhost:3002"
@@ -75,7 +75,7 @@ for _ in $(seq 1 60); do
 done
 
 # 6) Esperar salud del servicio MT3 (carga el modelo; puede tardar)
-log "Esperando al servicio de transcripción MT3 (carga el modelo, puede tardar 1-2 min)…"
+log "Esperando al servicio de transcripción MT3 (carga el modelo, puede tardar 1-2 min)..."
 for _ in $(seq 1 80); do
   if docker compose exec -T transcription curl -sf http://localhost:8000/health >/dev/null 2>&1; then
     log "✓ Servicio MT3 listo."
